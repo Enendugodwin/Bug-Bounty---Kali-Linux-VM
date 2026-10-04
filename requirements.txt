@@ -1,0 +1,5 @@
+mcp>=1.29
+numpy
+scikit-learn
+PyYAML
+wafw00f

@@ -1,0 +1,6 @@
+# One allowed target per line. Comments (#) and blanks ignored.
+# Examples:
+10.10.10.0/24
+8.8.8.8
+# 10.10.20.0/24
+www.google.com

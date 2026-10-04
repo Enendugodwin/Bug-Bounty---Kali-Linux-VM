@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- Local runtime state ---
+memory.pkl
+logs/
+*.log
+
+# --- Scan output: contains live-target data, never commit ---
+artifacts/
+reports/
+
+# --- Engagement scope: never commit program-specific scope ---
+scope.yaml
+scope.*.yaml
+scope.*.yaml.bak
+scope.*.bak
+scope.txt
+!scope.yaml.example
+!scope.txt.example
+
+# --- Secrets / local config ---
+.env
+.zap_api_key
+
+# --- Ad-hoc local scratch ---
+_zap_*
+_vinted.py
+
+# --- Backups ---
+*.bak
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db

@@ -1,0 +1,44 @@
+# =============================================================================
+# Bug-bounty scope & rules of engagement (TEMPLATE)
+# =============================================================================
+# Copy to `scope.yaml` and replace the placeholders with your program's scope.
+# Deny-by-default: only entries under `in_scope` that do not match any
+# `out_of_scope` entry may be tested.
+# =============================================================================
+
+program:
+  name: "REPLACE — program name"
+  platform: "REPLACE — e.g. HackerOne / Bugcrowd / self-hosted"
+  authorization: "REPLACE — authorization reference / rules link"
+  report_url: ""
+  contact: ""
+  valid_from: ""
+  valid_until: ""
+
+rules:
+  max_requests_per_second: 5
+  max_concurrency: 10
+  allowed_ports: []              # empty = no restriction; e.g. [80, 443]
+  allowed_schemes: ["https", "http"]
+  allow_intrusive: false         # brute force / exploitation
+  allow_destructive: false
+  fetch_exposed_files: true       # capture body evidence for exposed sensitive files
+  max_evidence_fetches: 25        # cap how many discovered URLs are fetched
+  user_agent: "KaliPentestMCP/1.0 (authorized bug-bounty assessment)"
+
+in_scope:
+  domains:
+    - "www.example.com"
+  wildcards: []                  # e.g. ["*.example.com"] (subdomains, not apex)
+  ips: []
+  cidrs: []
+
+out_of_scope:
+  domains: []
+  wildcards: []
+  ips: []
+  cidrs: []
+  paths: []                      # e.g. ["/logout"]
+
+notes: |
+  Describe any program-specific rules here.
