@@ -19,6 +19,7 @@ import subprocess
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -36,6 +37,7 @@ from . import scope as scope_mod
 
 SCANS: dict[str, "ScanState"] = {}
 _LOCK = threading.Lock()
+_BUILD = "build " + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 PROFILES = {
     "web": lambda target, operator, emit, job_id: assess_mod.run_assessment(
@@ -288,7 +290,8 @@ def _reports_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 async def index(request):
-    return HTMLResponse(PAGE, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(PAGE.replace("__BUILD__", _BUILD),
+                        headers={"Cache-Control": "no-store"})
 
 
 async def api_scope(request):
@@ -554,6 +557,7 @@ PAGE = r"""<!doctype html>
  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px}
  .icn{width:16px;height:16px;vertical-align:-3px;margin-right:6px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
  .brand{width:20px;height:20px;vertical-align:-4px;margin-right:8px;color:var(--grn);filter:drop-shadow(0 0 6px rgba(0,255,65,.6));fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+ .build{color:var(--mut);font-size:10.5px;letter-spacing:1px}
  @media (max-width:640px){ main{padding:14px} h1{font-size:13px} .meta{gap:14px} td.bar-cell{width:150px} }
  @media (prefers-reduced-motion: reduce){
    *{animation:none !important;transition:none !important}
@@ -601,6 +605,7 @@ PAGE = r"""<!doctype html>
 </defs></svg>
 <header>
   <h1><svg class="brand" aria-hidden="true"><use href="#i-shield"/></svg>KALI·PENTEST</h1>
+  <span class="build" title="page build">__BUILD__</span>
   <span class="live" id="live" style="display:none">LIVE SCAN</span>
   <span class="live" id="globalRun" style="display:none;color:#ffb020">0 RUNNING</span>
   <span style="flex:1"></span>
