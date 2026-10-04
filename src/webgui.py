@@ -563,6 +563,29 @@ PAGE = r"""<!doctype html>
    padding:8px 12px;border-radius:6px;margin-bottom:12px;font-weight:600}
  .ep{word-break:break-all;color:var(--mut)}
  #findings table{margin-top:8px}
+ /* --- Live log (adapted from 21st.dev "Log Viewer" by Mohammad Shehadeh) --- */
+ .logbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+ .logbar b{font-size:12px;letter-spacing:1px;color:var(--grn)}
+ .lvlbtns{display:inline-flex;gap:4px}
+ .lvlbtn{background:transparent;border:1px solid #1f1f1f;color:var(--mut);border-radius:999px;
+   padding:3px 10px;font-size:11px;font-family:inherit}
+ .lvlbtn[aria-pressed="true"]{color:var(--grn);border-color:var(--grn);background:rgba(0,255,65,.08)}
+ .lvlbtn .n{color:var(--mut);margin-left:6px;font-variant-numeric:tabular-nums}
+ .logview{max-height:288px;overflow:auto;border:1px solid var(--line);border-radius:8px;
+   background:rgba(0,0,0,.5);padding:8px;font-family:"Fira Code",ui-monospace,monospace;
+   font-size:12px;line-height:1.5}
+ .logline{display:flex;gap:8px;padding:1px 4px;white-space:pre-wrap;word-break:break-word;border-radius:4px}
+ .logline:hover{background:rgba(255,255,255,.03)}
+ .logtime{flex:0 0 auto;color:var(--mut);font-variant-numeric:tabular-nums}
+ .loglvl{flex:0 0 auto;font-weight:600;width:2.4em}
+ .logsrc{flex:0 0 auto;color:var(--mut)}
+ .logmsg{min-width:0}
+ .lvl-debug .loglvl{color:var(--mut)} .lvl-info .loglvl{color:var(--cyn)}
+ .lvl-warn .loglvl{color:var(--amb)} .lvl-error .loglvl{color:var(--red)}
+ .lvl-success .loglvl{color:var(--grn)}
+ .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:6px;
+   background:var(--grn);box-shadow:0 0 6px var(--grn)}
+ .dot.paused{background:var(--mut);box-shadow:none}
 </style></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
@@ -573,6 +596,8 @@ PAGE = r"""<!doctype html>
  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 4v4h-4"/></symbol>
  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 12l5 5 5-5"/><path d="M5 21h14"/></symbol>
+ <symbol id="i-arrowdown" viewBox="0 0 24 24"><path d="M12 4v14"/><path d="M6 12l6 6 6-6"/></symbol>
+ <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14"/><path d="M15 5v14"/></symbol>
 </defs></svg>
 <header>
   <h1><svg class="brand" aria-hidden="true"><use href="#i-shield"/></svg>KALI·PENTEST</h1>
@@ -607,6 +632,16 @@ PAGE = r"""<!doctype html>
   <table><thead><tr><th scope="col">Agent</th><th scope="col">Tool</th><th scope="col">Status</th><th scope="col">Progress</th>
     <th scope="col">Duration</th><th scope="col">Exit</th><th scope="col">Findings</th></tr></thead>
     <tbody id="rows"><tr><td colspan="7" style="color:var(--mut)">// no scan yet — configure a target and hit START</td></tr></tbody></table>
+  </div>
+  <div class="card">
+    <div class="logbar">
+      <b>// LIVE LOG</b>
+      <span style="flex:1"></span>
+      <span class="lvlbtns" id="logFilters" role="group" aria-label="Filter log by level"></span>
+      <button class="sec" id="logFollow" aria-pressed="true"><svg class="icn" aria-hidden="true"><use href="#i-arrowdown"/></svg>Follow</button>
+      <button class="sec" id="logPause" aria-pressed="false"><svg class="icn" aria-hidden="true"><use href="#i-pause"/></svg><span id="logPauseTxt">Pause</span><span class="dot" id="logDot"></span></button>
+    </div>
+    <div class="logview" id="logview" role="log" aria-live="polite" aria-label="Live scan log"></div>
   </div>
   <div class="card" id="sum" style="display:none"></div>
   <div class="card" id="findings" style="display:none"></div>
@@ -670,6 +705,47 @@ async function loadFindings(id){
   }catch(e){}
 }
 
+/* Live log — pattern adapted from 21st.dev "Log Viewer" (level filter + counts,
+   follow/pause) into vanilla JS for this console. */
+let logbook=[], logFilter="all", logFollow=true, logPaused=false;
+let seenSteps={}, seenScan=false, seenDone=false;
+const LVLS={all:null,info:["debug","info","success"],warn:["warn"],error:["error"]};
+const LBL={debug:"DBG",info:"INF",warn:"WRN",error:"ERR",success:"OK"};
+function nowClock(){return new Date().toTimeString().slice(0,8);}
+function logAdd(level,src,msg){ if(logPaused)return; logbook.push({t:nowClock(),level:level,src:src,msg:msg}); if(logbook.length>400)logbook.shift(); renderLog(); }
+function renderLog(){
+  const vis=logbook.filter(function(e){return !LVLS[logFilter]||LVLS[logFilter].indexOf(e.level)>=0;});
+  $("logview").innerHTML=vis.map(function(e){return '<div class="logline lvl-'+e.level+'"><span class="logtime">'+e.t+'</span><span class="loglvl">'+LBL[e.level]+'</span><span class="logsrc">'+esc(e.src)+'</span><span class="logmsg">'+esc(e.msg)+'</span></div>';}).join("");
+  if(logFollow){const v=$("logview"); v.scrollTop=v.scrollHeight;}
+  renderLogFilters();
+}
+function renderLogFilters(){
+  const c={all:logbook.length,info:0,warn:0,error:0};
+  for(const e of logbook){ if(e.level==="debug"||e.level==="info"||e.level==="success")c.info++; else if(e.level==="warn")c.warn++; else if(e.level==="error")c.error++; }
+  const labels={all:"All",info:"Info",warn:"Warn",error:"Error"};
+  $("logFilters").innerHTML=["all","info","warn","error"].map(function(k){return '<button class="lvlbtn" data-f="'+k+'" aria-pressed="'+(logFilter===k)+'">'+labels[k]+'<span class="n">'+c[k]+'</span></button>';}).join("");
+  Array.prototype.forEach.call($("logFilters").querySelectorAll(".lvlbtn"),function(b){b.onclick=function(){logFilter=b.dataset.f; renderLog();};});
+}
+$("logFollow").onclick=function(){logFollow=!logFollow; this.setAttribute("aria-pressed",String(logFollow)); if(logFollow){const v=$("logview"); v.scrollTop=v.scrollHeight;}};
+$("logview").onscroll=function(){const v=$("logview"); logFollow=(v.scrollHeight-v.scrollTop-v.clientHeight)<24; $("logFollow").setAttribute("aria-pressed",String(logFollow));};
+$("logPause").onclick=function(){logPaused=!logPaused; this.setAttribute("aria-pressed",String(logPaused)); $("logPauseTxt").textContent=logPaused?"Resume":"Pause"; $("logDot").className="dot"+(logPaused?" paused":"");};
+function logFromSnapshot(s){
+  if(!seenScan){seenScan=true; logAdd("info","[scan]","start "+(s.profile||"scan")+" "+(s.target||""));}
+  for(const st of (s.steps||[])){
+    const prev=seenSteps[st.key]; const src="["+(st.agent||"tool")+"]";
+    if(st.status==="running" && prev!=="running"){ logAdd("info",src,"start "+st.label); }
+    if((st.status==="done"||st.status==="error"||st.status==="skipped") && prev!==st.status){
+      if(st.status==="skipped") logAdd("warn",src,"skipped "+st.label);
+      else if(st.status==="error") logAdd("error",src,"error "+st.label);
+      else { const d=(st.duration_ms!=null)?((st.duration_ms/1000).toFixed(1)+"s"):"?"; logAdd("success",src,"done "+st.label+" ("+d+", findings="+((st.findings==null)?0:st.findings)+")"); }
+    }
+    seenSteps[st.key]=st.status;
+  }
+  if(s.status==="done" && !seenDone){seenDone=true; logAdd("success","[scan]","complete");}
+  if(s.status==="error" && !seenDone){seenDone=true; logAdd("error","[scan]",s.error||"failed");}
+}
+renderLogFilters();
+
 async function loadScope(){const r=await fetch("/api/scope/raw"); $("scopeYaml").value=await r.text();}
 async function saveScope(){
   $("scopeMsg").textContent="saving…"; $("scopeMsg").className="";
@@ -699,6 +775,7 @@ async function poll(){
   if(!sid)return;
   const r=await fetch("/api/scan/"+sid); if(!r.ok)return;
   const s=await r.json();
+  logFromSnapshot(s);
   $("mstatus").textContent=s.status.toUpperCase();
   $("magent").innerHTML=agentChip(s.agent||"Agent");
   $("mtarget").textContent=s.target||"—";
@@ -736,10 +813,13 @@ async function poll(){
 
 function attach(id){
   sid=id; loadedFor=null;
+  logbook=[]; seenSteps={}; seenScan=false; seenDone=false; logPaused=false;
+  $("logPauseTxt").textContent="Pause"; $("logDot").className="dot";
   $("findings").style.display="none"; $("findings").innerHTML="";
   if(timer)clearInterval(timer);
   timer=setInterval(poll,1000);
   $("live").style.display="";
+  renderLog();
   poll();
 }
 

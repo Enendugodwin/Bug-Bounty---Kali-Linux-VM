@@ -17,6 +17,8 @@ class GuiMarkupTests(unittest.TestCase):
         self.assertIn('value="web"', html)            # web profile selectable
         self.assertIn('id="findings"', html)          # findings viewer panel
         self.assertIn("loadFindings", html)           # findings loader JS
+        self.assertIn('id="logview"', html)           # live log panel
+        self.assertIn("logFromSnapshot", html)        # live log wiring
         self.assertIn("#i-shield", html)              # SVG icon sprite
         self.assertIn("Fira Code", html)              # design-system typography
         self.assertIn("prefers-reduced-motion", html)
