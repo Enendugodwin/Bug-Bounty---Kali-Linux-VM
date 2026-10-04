@@ -284,7 +284,7 @@ def _reports_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 async def index(request):
-    return HTMLResponse(PAGE)
+    return HTMLResponse(PAGE, headers={"Cache-Control": "no-store"})
 
 
 async def api_scope(request):
