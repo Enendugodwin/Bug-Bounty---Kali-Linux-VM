@@ -1,0 +1,15 @@
+[Unit]
+Description=Kali Pentest MCP web GUI (user service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kali-pentest-mcp/bugbounty/kali-pentest-mcp
+EnvironmentFile=-%h/kali-pentest-mcp/bugbounty/kali-pentest-mcp/deploy/kpm.env
+ExecStart=%h/kali-pentest-mcp/bugbounty/kali-pentest-mcp/.venv/bin/python -m src.webgui --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

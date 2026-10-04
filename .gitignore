@@ -26,6 +26,7 @@ scope.txt
 # --- Secrets / local config ---
 .env
 .zap_api_key
+deploy/kpm.env
 
 # --- Ad-hoc local scratch ---
 _zap_*

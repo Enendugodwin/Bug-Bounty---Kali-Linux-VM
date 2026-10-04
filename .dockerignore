@@ -1,0 +1,33 @@
+# Keep the build context small and never bake scope/results into the image.
+.git
+.gitignore
+.gitattributes
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+
+# Scan output and local state
+reports/
+artifacts/
+logs/
+memory.pkl
+
+# Engagement scope / secrets
+scope.yaml
+scope.txt
+.env
+.zap_api_key
+
+# Backups / scratch
+*.bak
+_zap_*
+_vinted.py
+Dockerfile
+docker-compose.yml
+deploy/
+README.md
+AGENT_GUIDE.md
+PLAN.md
+capabilities.md

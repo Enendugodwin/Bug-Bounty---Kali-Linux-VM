@@ -1,0 +1,23 @@
+[Unit]
+Description=Kali Pentest MCP web GUI
+Documentation=file:/home/AIuser/kali-pentest-mcp/bugbounty/kali-pentest-mcp/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=AIuser
+Group=AIuser
+WorkingDirectory=/home/AIuser/kali-pentest-mcp/bugbounty/kali-pentest-mcp
+EnvironmentFile=-/home/AIuser/kali-pentest-mcp/bugbounty/kali-pentest-mcp/deploy/kpm.env
+ExecStart=/home/AIuser/kali-pentest-mcp/bugbounty/kali-pentest-mcp/.venv/bin/python -m src.webgui --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5
+
+# Modest hardening. The tool must write reports/artifacts/logs under its own
+# project directory, so ProtectHome/ProtectSystem are deliberately left off.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

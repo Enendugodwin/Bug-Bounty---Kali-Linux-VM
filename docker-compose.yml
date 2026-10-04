@@ -1,0 +1,41 @@
+# Kali Pentest MCP — docker compose deployment.
+#
+# Scope is deny-by-default: mount your scope.yaml here; the GUI can edit it.
+# `network_mode: host` lets nmap/scanners reach the network and lets the GUI
+# bind :8080 directly. If you prefer isolation, comment it out and use the
+# `ports` mapping instead (some scans are less reliable behind NAT).
+#
+#   docker compose up -d --build webgui
+#   docker compose run --rm -T mcp      # MCP stdio server for one client
+#
+services:
+  webgui:
+    build: .
+    image: kali-pentest-mcp:latest
+    container_name: kpm-webgui
+    restart: unless-stopped
+    network_mode: host
+    # ports:
+    #   - "127.0.0.1:8080:8080"   # bind to localhost only — the GUI has no auth
+    volumes:
+      - ./scope.yaml:/app/scope.yaml          # authoritative allow-list
+      - ./reports:/app/reports
+      - ./artifacts:/app/artifacts
+      - ./logs:/app/logs
+    command: ["python", "-m", "src.webgui", "--host", "0.0.0.0", "--port", "8080"]
+
+  # MCP server over stdio, launched per client:
+  #   docker compose run --rm -T mcp
+  mcp:
+    build: .
+    image: kali-pentest-mcp:latest
+    profiles: ["mcp"]
+    stdin_open: true
+    tty: false
+    network_mode: host
+    volumes:
+      - ./scope.yaml:/app/scope.yaml
+      - ./reports:/app/reports
+      - ./artifacts:/app/artifacts
+      - ./logs:/app/logs
+    command: ["python", "-m", "src.server"]

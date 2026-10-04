@@ -14,6 +14,10 @@ bash bootstrap.sh          # creates .venv, installs deps, seeds scope files
 source .venv/bin/activate
 ```
 
+For services and containers see [`deploy/README.md`](deploy/README.md)
+(`deploy/install.sh --user` sets up a systemd web-GUI service; a `Dockerfile`
+and `docker-compose.yml` are included).
+
 ## Usage
 
 ```bash

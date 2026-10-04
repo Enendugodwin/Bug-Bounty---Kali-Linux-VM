@@ -327,6 +327,24 @@ python -m src.webgui --host 0.0.0.0 --port 8080
 
 ---
 
+## 🚀 Deployment
+
+See [`deploy/README.md`](deploy/README.md). Quick options:
+
+```bash
+deploy/install.sh --check     # report missing scanner tools (no changes)
+deploy/install.sh             # .venv + deps + seed scope.yaml
+deploy/install.sh --user      # user systemd service for the web GUI (no sudo)
+deploy/install.sh --system    # system systemd service (needs sudo)
+```
+
+A container image and compose file are included (`Dockerfile`,
+`docker-compose.yml`) for hosts with Docker; the MCP server runs over stdio
+(`python -m src.server`). The web GUI has **no authentication** — bind it to
+`127.0.0.1` or firewall it.
+
+---
+
 ## 🧬 Memory & RAG
 
 Every tool result is stored in `memory.pkl`. Use `query_past_scans` to find
