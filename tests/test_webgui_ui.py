@@ -14,6 +14,9 @@ class GuiMarkupTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         html = r.text
         self.assertIn('value="infra"', html)          # infra selectable in GUI
+        self.assertIn('value="web"', html)            # web profile selectable
+        self.assertIn('id="findings"', html)          # findings viewer panel
+        self.assertIn("loadFindings", html)           # findings loader JS
         self.assertIn("#i-shield", html)              # SVG icon sprite
         self.assertIn("Fira Code", html)              # design-system typography
         self.assertIn("prefers-reduced-motion", html)

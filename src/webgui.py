@@ -26,6 +26,7 @@ from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
                                  PlainTextResponse)
 from starlette.routing import Route
 
+from . import assess as assess_mod
 from . import cve as cve_mod
 from . import infra as infra_mod
 from . import jobs as jobs_mod
@@ -37,6 +38,9 @@ SCANS: dict[str, "ScanState"] = {}
 _LOCK = threading.Lock()
 
 PROFILES = {
+    "web": lambda target, operator, emit, job_id: assess_mod.run_assessment(
+        target, profile="web", operator=operator, on_event=emit,
+        job_id=job_id, job_source="webgui"),
     "matrix": lambda target, operator, emit, job_id: matrix_mod.run_matrix(
         target, operator=operator, on_event=emit, job_id=job_id,
         job_source="webgui"),
@@ -47,8 +51,8 @@ PROFILES = {
         target, operator=operator, on_event=emit, job_id=job_id,
         job_source="webgui"),
 }
-LEAD_AGENT = {"matrix": "Matrix Agent", "cve": "CVE Agent",
-              "infra": "Infra Agent"}
+LEAD_AGENT = {"web": "Assessment Agent", "matrix": "Matrix Agent",
+              "cve": "CVE Agent", "infra": "Infra Agent"}
 
 # Scanner processes we recognise as "a scan" even when started outside the GUI.
 _EXT_TOOLS = {"nuclei", "nmap", "nikto", "gobuster", "ffuf", "dirb", "wapiti",
@@ -555,6 +559,10 @@ PAGE = r"""<!doctype html>
    *{animation:none !important;transition:none !important}
    body:after{display:none}
  }
+ .notice{background:rgba(255,176,32,.12);border:1px solid var(--amb);color:var(--amb);
+   padding:8px 12px;border-radius:6px;margin-bottom:12px;font-weight:600}
+ .ep{word-break:break-all;color:var(--mut)}
+ #findings table{margin-top:8px}
 </style></head><body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
@@ -579,6 +587,7 @@ PAGE = r"""<!doctype html>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
     <input id="target" placeholder="target // must be in scope" value="www.vulnbank.org" size="32" aria-label="Target">
     <select id="profile" aria-label="Scan profile">
+      <option value="web">web — nmap · httpx · nikto · feroxbuster</option>
       <option value="matrix">matrix — all tools</option>
       <option value="cve">cve — nuclei + nmap vuln</option>
       <option value="infra">infra — SMB/SNMP/SSH/RDP/VPN</option>
@@ -600,6 +609,7 @@ PAGE = r"""<!doctype html>
     <tbody id="rows"><tr><td colspan="7" style="color:var(--mut)">// no scan yet — configure a target and hit START</td></tr></tbody></table>
   </div>
   <div class="card" id="sum" style="display:none"></div>
+  <div class="card" id="findings" style="display:none"></div>
  </div>
 
  <div id="viewScope" style="display:none">
@@ -626,7 +636,7 @@ const sev=["critical","high","medium","low","info"];
 const col={critical:"#ef4444",high:"#ff8a3d",medium:"#ffb020",low:"#22d3ee",info:"#94a3b8"};
 const agentCol={"Recon Agent":"#22d3ee","Web Agent":"#00ff41","CVE Agent":"#ffb020",
   "Exploit Agent":"#ef4444","Matrix Agent":"#a855f7","Infra Agent":"#f59e0b"};
-let sid=null, timer=null;
+let sid=null, timer=null, loadedFor=null;
 
 $("tabScan").onclick=()=>{$("viewScan").style.display="";$("viewScope").style.display="none";};
 $("tabScope").onclick=()=>{$("viewScan").style.display="none";$("viewScope").style.display="";loadScope();};
@@ -634,7 +644,31 @@ $("reloadScope").onclick=loadScope;
 $("saveScope").onclick=saveScope;
 $("checkBtn").onclick=scopeCheck;
 
-function agentChip(name){const c=agentCol[name]||"#5f7d74";return '<span class="agent" style="color:'+c+'"><i style="background:'+c+';box-shadow:0 0 6px '+c+'"></i>'+name+'</span>';}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function agentChip(name){const c=agentCol[name]||"#94a3b8";return '<span class="agent" style="color:'+c+'"><i style="background:'+c+';box-shadow:0 0 6px '+c+'"></i>'+esc(name)+'</span>';}
+function sevChip(sev){const c=col[sev]||"#94a3b8";return '<span class="badge" style="color:'+c+';border-color:'+c+';background:'+c+'22">'+esc(sev)+'</span>';}
+const sevOrder={critical:0,high:1,medium:2,low:3,info:4};
+async function loadFindings(id){
+  try{
+    const r=await fetch("/api/scan/"+id+"/download?fmt=json"); if(!r.ok)return;
+    const j=await r.json(); const meta=j.meta||{}; const fs=(j.findings||[]).slice();
+    fs.sort(function(a,b){return ((sevOrder[a.severity]??9)-(sevOrder[b.severity]??9))||(((b.epss||0)-(a.epss||0)));});
+    let h="";
+    if((meta.scan_status||"")==="inconclusive"){const b=meta.block||{};
+      h+='<div class="notice">\u26a0 SCAN INCONCLUSIVE \u2014 blocked by '+esc(b.vendor||"edge/WAF")+(b.status?(" (HTTP "+esc(b.status)+")"):"")+'.</div>';}
+    h+="<b>// FINDINGS ("+fs.length+")</b>";
+    if(!fs.length){h+='<div class="hint">No findings were derived from the collected output.</div>';}
+    else{
+      h+='<div class="tablewrap"><table><thead><tr><th scope="col">Sev</th><th scope="col">Finding</th><th scope="col">Endpoint</th><th scope="col">Risk</th><th scope="col">Validation</th></tr></thead><tbody>';
+      for(const f of fs){
+        const risk=[]; if(f.cvss!=null)risk.push("CVSS "+f.cvss); if(f.epss!=null)risk.push("EPSS "+Number(f.epss).toFixed(3));
+        h+='<tr><td>'+sevChip(f.severity)+'</td><td>'+esc(f.title)+'</td><td class="ep">'+esc(f.endpoint||"")+'</td><td>'+risk.join("<br>")+'</td><td class="ep">'+esc(f.validation_status||"")+'</td></tr>';
+      }
+      h+="</tbody></table></div>";
+    }
+    const el=$("findings"); el.style.display="block"; el.innerHTML=h;
+  }catch(e){}
+}
 
 async function loadScope(){const r=await fetch("/api/scope/raw"); $("scopeYaml").value=await r.text();}
 async function saveScope(){
@@ -694,12 +728,15 @@ async function poll(){
       (s.status==="done"?('<a class="dl" href="/api/scan/'+s.id+'/download?fmt=md"><svg class="icn" aria-hidden="true"><use href="#i-download"/></svg>REPORT .MD</a> <a class="dl" style="color:#22d3ee;border-color:#22d3ee" href="/api/scan/'+s.id+'/download?fmt=json"><svg class="icn" aria-hidden="true"><use href="#i-download"/></svg>JSON</a>'):"");
     loadReports();
   }
-  if(s.status==="error")$("sum").innerHTML="<b style='color:#ff3b4e'>// ERROR</b> "+s.error;
+  if(s.status==="error")$("sum").innerHTML="<b style='color:#ef4444'>// ERROR</b> "+esc(s.error);
+  if(s.status==="done" && loadedFor!==s.id){loadedFor=s.id; loadFindings(s.id);}
+  if(s.status==="error")$("findings").style.display="none";
   if(s.status==="done"||s.status==="error"||s.status==="interrupted"){clearInterval(timer);timer=null;$("live").style.display="none";}
 }
 
 function attach(id){
-  sid=id;
+  sid=id; loadedFor=null;
+  $("findings").style.display="none"; $("findings").innerHTML="";
   if(timer)clearInterval(timer);
   timer=setInterval(poll,1000);
   $("live").style.display="";
