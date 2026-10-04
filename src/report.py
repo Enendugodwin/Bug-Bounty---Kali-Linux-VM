@@ -194,6 +194,16 @@ def render_markdown(a: Assessment) -> str:
             cwe = cwe_for(f)
             if cwe:
                 lines.append(f"- **CWE**: {cwe}")
+            if f.cvss is not None or f.epss is not None:
+                risk = []
+                if f.cvss is not None:
+                    vector = f" ({f.cvss_vector})" if f.cvss_vector else ""
+                    risk.append(f"CVSS {f.cvss:g}{vector}")
+                if f.epss is not None:
+                    pct = (f" ({f.epss_percentile * 100:.1f}th pct)"
+                           if f.epss_percentile else "")
+                    risk.append(f"EPSS {f.epss:.3f}{pct}")
+                lines.append("- **Risk**: " + "  |  ".join(risk))
             if f.description:
                 lines.append(f"- **Description**: {f.description}")
             lines.append("")
@@ -212,6 +222,20 @@ def render_markdown(a: Assessment) -> str:
         lines.append("## 🔎 Findings")
         lines.append("")
         lines.append("No findings were derived from the collected output. Raw output is in the appendix.")
+        lines.append("")
+
+    # --- Top risk (EPSS) ---------------------------------------------
+    epss_ranked = sorted((f for f in a.findings if f.epss is not None),
+                         key=lambda f: f.epss, reverse=True)[:10]
+    if epss_ranked:
+        lines.append("## 🔥 Top Risk (by EPSS)")
+        lines.append("")
+        lines.append("Ranked by the probability of exploitation in the next 30 "
+                     "days (FIRST.org EPSS).")
+        lines.append("")
+        for f in epss_ranked:
+            lines.append(f"- **{f.epss:.3f}** — `{f.endpoint or a.target}` — "
+                         f"{f.title}")
         lines.append("")
 
     # --- Needs manual validation -------------------------------------

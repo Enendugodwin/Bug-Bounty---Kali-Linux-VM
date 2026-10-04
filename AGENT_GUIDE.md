@@ -169,6 +169,15 @@ a **Confidence & Validation** summary, a derived **CWE** per finding, and an
 *Unverified — Needs Manual Validation* section so scanner heuristics are not
 read as confirmed.
 
+**CVE intelligence (CVSS/EPSS)**: findings that reference a CVE are enriched
+from public intelligence — **EPSS** (FIRST.org, batched by CVE) and **CVSS**
+(preferring the scanner's own score, topped up from the **NVD**). Results are
+cached in `logs/cveintel.json`, so repeat runs are offline; the module only ever
+talks to FIRST.org / NVD, never the target. Set `NVD_API_KEY` for a higher NVD
+quota (or `KPM_NVD_ANON=1` for a few anonymous lookups); disable entirely with
+`--no-cve-intel`. Reports show CVSS/EPSS per finding plus a **Top Risk (by
+EPSS)** section.
+
 ## 🛡️ WAF / edge block detection
 
 Before the `web`, `matrix`, and `cve` profiles run any scanner, they send a

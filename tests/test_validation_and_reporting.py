@@ -101,6 +101,19 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("Needs Manual Validation", md)
         self.assertEqual(validation_counts([f])["needs_manual_validation"], 1)
 
+    def test_report_shows_cvss_epss_and_top_risk(self):
+        f = _finding(title="CVE-2021-44228 log4shell", severity="critical",
+                     endpoint="https://example.test/x",
+                     cvss=10.0, cvss_vector="CVSS:3.1/AV:N",
+                     epss=0.97, epss_percentile=0.999,
+                     cves=["CVE-2021-44228"])
+        a = Assessment(target="example.test", authorized=True,
+                       scope_reason="test", scan_status="complete", findings=[f])
+        md = render_markdown(a)
+        self.assertIn("Top Risk (by EPSS)", md)
+        self.assertIn("CVSS 10", md)
+        self.assertIn("EPSS 0.970", md)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -63,6 +63,7 @@ def _cmd_assess(args) -> int:
         wordlist=args.wordlist,
         deep=args.deep,
         nuclei=args.nuclei or args.deep,
+        cve_intel=not args.no_cve_intel,
         dry_run=args.dry_run,
         all_web_ports=args.all_ports,
         nikto_maxtime=args.nikto_maxtime,
@@ -305,6 +306,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--nuclei", action="store_true",
                     help="Run a nuclei sweep (medium,high,critical) in the web "
                          "profile; also implied by --deep.")
+    sp.add_argument("--no-cve-intel", action="store_true",
+                    help="Skip CVSS/EPSS enrichment (no calls to FIRST.org/NVD).")
     sp.add_argument("--dry-run", action="store_true",
                     help="Show the plan without executing anything.")
     sp.add_argument("--all-ports", action="store_true",

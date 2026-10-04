@@ -616,6 +616,11 @@ def run_matrix(
         skipped.append(na)
 
     a.findings = dedupe(a.findings)
+    try:
+        from . import cveintel
+        cveintel.enrich_assessment(a)
+    except Exception:  # noqa: BLE001 - enrichment must never break a scan
+        pass
     a.finished = _iso()
     if skipped:
         a.notes = (a.notes or "") + "\n\n## Skipped / not applicable\n" + \

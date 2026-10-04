@@ -47,6 +47,13 @@ def redact(text: str) -> str:
     )
 
 
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -118,6 +125,11 @@ def parse_nuclei(text: str, target: str) -> list:
         cves = classification.get("cve-id") or []
         if isinstance(cves, str):
             cves = [cves]
+        cves = [str(c) for c in cves if c]
+        cwe_ids = classification.get("cwe-id") or []
+        if isinstance(cwe_ids, str):
+            cwe_ids = [cwe_ids]
+        cwe_ids = [str(c) for c in cwe_ids if c]
         refs = list(info.get("reference") or [])
         refs += [f"https://nvd.nist.gov/vuln/detail/{c}" for c in cves]
 
@@ -129,6 +141,7 @@ def parse_nuclei(text: str, target: str) -> list:
             evidence = json.dumps(d)[:1000]
 
         cvss = classification.get("cvss-score")
+        cvss_vector = str(classification.get("cvss-metrics") or "")
         desc = info.get("description") or ""
         if cvss:
             desc = f"CVSS {cvss}. " + desc
@@ -146,6 +159,10 @@ def parse_nuclei(text: str, target: str) -> list:
             remediation="Apply the vendor patch and upgrade to a fixed version.",
             references=[r for r in refs if r][:10],
             validation_status="scanner_match",
+            cves=cves,
+            cwe_ids=cwe_ids,
+            cvss=_to_float(cvss),
+            cvss_vector=cvss_vector,
         ))
     return out
 
@@ -433,6 +450,11 @@ def run_cve_scan(
                     parser=parse_nmap_vuln)
 
     a.findings = findings_mod.dedupe(a.findings)
+    try:
+        from . import cveintel
+        cveintel.enrich_assessment(a)
+    except Exception:  # noqa: BLE001 - enrichment must never break a scan
+        pass
     a.finished = _iso()
     a.report_md, a.report_json = report_mod.write_report(a, reports_dir)
     emit(type="scan_done", status="done", findings=a.summary(),

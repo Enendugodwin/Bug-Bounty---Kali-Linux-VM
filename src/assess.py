@@ -547,6 +547,7 @@ def run_assessment(
     wordlist: str | None = None,
     deep: bool = False,
     nuclei: bool = False,
+    cve_intel: bool = True,
     dry_run: bool = False,
     all_web_ports: bool = False,
     write_report: bool = True,
@@ -992,6 +993,9 @@ def run_assessment(
             f"dropped {len(noise_findings)} informational noise item(s)"
         )
     assessment.findings = findings_mod.dedupe(assessment.findings)
+    if cve_intel:
+        from . import cveintel
+        cveintel.enrich_assessment(assessment)
     assessment.finished = _iso()
     if skipped_steps:
         assessment.notes = (assessment.notes or "") + "\n\n## Scope-safe omissions\n" + \

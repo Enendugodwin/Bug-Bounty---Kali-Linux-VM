@@ -33,6 +33,13 @@ class Finding:
     references: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     validation_status: str = "unverified"
+    # CVE / CWE / risk intelligence (populated from scanner output or cveintel)
+    cves: list[str] = field(default_factory=list)
+    cwe_ids: list[str] = field(default_factory=list)
+    cvss: float | None = None
+    cvss_vector: str = ""
+    epss: float | None = None
+    epss_percentile: float | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -584,6 +591,9 @@ _CWE_MAP: list[tuple[str, str]] = [
 
 def cwe_for(f: Finding) -> str:
     """Best-effort CWE label for a finding, derived from its text."""
+    ids = [c for c in (getattr(f, "cwe_ids", None) or []) if c]
+    if ids:
+        return ", ".join(str(c).upper() for c in ids)
     text = f"{f.title} {f.description}".lower()
     for pattern, label in _CWE_MAP:
         if re.search(pattern, text):
