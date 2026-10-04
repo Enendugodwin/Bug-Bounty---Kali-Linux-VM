@@ -54,15 +54,17 @@ profiles, MCP tools, and extension points, and
 
 | Profile | Tools |
 | --- | --- |
-| `web` | nmap → nikto + gobuster |
+| `web` | nmap → httpx fingerprint → nikto → feroxbuster (gobuster fallback); `--nuclei` adds a nuclei sweep |
 | `network` | nmap service scan |
 | `full` | network + web |
 | `cve` | nuclei (high/critical + newest CVEs) + nmap vuln |
+| `infra` | service-driven: SMB/AD, SSH, SNMP, RDP, NFS, IKE/VPN, TLS (`src/infra.py`) |
 
 ## Architecture
 
 `server.py` (MCP tools) · `cli.py` (CLI) · `webgui.py` (GUI) ·
 `assess.py` (orchestrator) · `cve.py` (CVE scanning) · `matrix.py` (all tools) ·
+`infra.py` (firewalls/Windows/switches/Linux) · `cveintel.py` (CVSS/EPSS) ·
 `intrusive.py` (opt-in PoC) · `scope.py` (authz) · `findings.py` (parsers) ·
 `report.py` (reporting) · `jobs.py` (persistent scan history) ·
 `runner.py` (safe exec) · `memory.py` (RAG).

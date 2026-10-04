@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import assess as assess_mod
 from . import cve as cve_mod
+from . import infra as infra_mod
 from . import jobs
 from . import matrix as matrix_mod
 from . import memory
@@ -217,6 +218,41 @@ def matrix_agent(target: str, operator: str = "",
     s = a.summary()
     out = [
         f"Matrix scan of {a.target} complete.",
+        f"Job ID: {a.job_id}",
+        "Findings: " + ", ".join(
+            f"{k}={s[k]}" for k in ("critical", "high", "medium", "low", "info")
+        ) + f", total={s['total']}",
+    ]
+    for c in a.commands:
+        out.append(f"  - [{c.get('exit_code')}] {c.get('command')[:120]}")
+    if a.report_md:
+        out.append(f"Report (Markdown): {a.report_md}")
+        out.append(f"Report (JSON): {a.report_json}")
+    return "\n".join(out)
+
+
+@mcp.tool()
+def infra_agent(target: str, operator: str = "",
+                include_intrusive: bool = False,
+                confirm_intrusive: bool = False) -> str:
+    """Infrastructure scan of firewalls, Windows/AD, switches and Linux/Unix.
+
+    Service-driven and scope-enforced. Intrusive tools (nmap vuln scripts,
+    credential attacks) require include_intrusive=true, confirm_intrusive=true
+    AND scope.yaml rules.allow_intrusive: true.
+    """
+    try:
+        a = infra_mod.run_infra(
+            target, operator=operator, include_intrusive=include_intrusive,
+            confirm_intrusive=confirm_intrusive, job_source="mcp",
+        )
+    except PermissionError as exc:
+        return f"Refused: {exc}"
+    if not a.authorized:
+        return f"Refused: {a.target} — {a.scope_reason}"
+    s = a.summary()
+    out = [
+        f"Infra scan of {a.target} complete.",
         f"Job ID: {a.job_id}",
         "Findings: " + ", ".join(
             f"{k}={s[k]}" for k in ("critical", "high", "medium", "low", "info")

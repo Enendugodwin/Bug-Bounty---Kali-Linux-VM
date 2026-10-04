@@ -35,6 +35,7 @@ python -m src.cli reparse                        # re-derive findings from artif
 python -m src.cli enrich                         # fetch body evidence for discovered 200s (redacted)
 python -m src.cli cve www.example.com --operator alice   # CVE sweep: nuclei high/critical + nmap vuln
 python -m src.cli matrix www.example.com --operator alice # FULL tool matrix (all scanners)
+python -m src.cli infra 10.0.0.5 --operator alice          # infra: firewalls/Windows/switches/Linux
 python -m src.cli intrusive --url https://host/console --confirm-authorized  # opt-in, non-destructive PoC
 python -m src.cli serve                          # run the MCP server (stdio)
 python -m src.webgui --port 8080                 # web GUI (live progress bars)
@@ -121,6 +122,7 @@ wordlist). Use `--deep` for the full seclists wordlist.
 | `assess_target(target, profile, operator, dry_run)` | Run the full scoped workflow + write report. |
 | `cve_agent(target, severity, latest)` | Scope-limited nuclei CVE scan; Nmap vuln scripts are opt-in. |
 | `matrix_agent(target, operator, include_intrusive, confirm_intrusive)` | Full tool matrix; optional intrusive phase requires both flags and scope authorization. |
+| `infra_agent(target, operator, include_intrusive, confirm_intrusive)` | Infrastructure scan (firewalls/Windows/switches/Linux), service-driven and scope-enforced. |
 | `planner(goal, target, profile)` | Produce a scoped step-by-step plan. |
 | `recon_agent(target, options)` | Network recon (nmap; enum4linux on Windows/SMB). |
 | `web_agent(target, options)` | Nikto web scan with sane defaults. |
@@ -286,6 +288,34 @@ Not-applicable tools (e.g. `enum4linux`/`nxc`/`responder` without SMB, `john`/
 `hashcat` without hashes, `openvas`/`gvmd` when the Greenbone daemon is down)
 are listed under **Skipped / not applicable** rather than failing silently.
 `--timeout` bounds each tool; `--rate` caps requests/second.
+
+---
+
+## 🧱 Infrastructure scanning (`infra`)
+
+`src/infra.py` assesses a single authorized host/IP and picks tools from the
+services nmap discovers. Deny-by-default scope and RoE rate limits apply, and
+tools that are not installed are reported as *skipped*.
+
+```bash
+python -m src.cli infra 10.0.0.5 --operator alice
+python -m src.cli infra 10.0.0.5 --intrusive --confirm-intrusive   # gated
+```
+
+| Discovered service | Tools |
+| :--- | :--- |
+| SMB/RPC (135/139/445) | `enum4linux-ng`, `nxc smb` |
+| LDAP/AD (389/636) | `nxc ldap` |
+| WinRM (5985/5986) | `nxc winrm` |
+| RDP (3389) | nmap `rdp-enum-encryption`, `rdp-ntlm-info` |
+| SSH (22) | nmap `ssh2-enum-algos`, `ssh-auth-methods`, `ssh-hostkey` |
+| NFS/RPC (111/2049) | `showmount` |
+| SNMP (161) | `onesixtyone` + `snmpwalk` |
+| IKE/IPsec (500/4500) | `ike-scan` |
+| TLS mgmt (443/8443/993/995) | `sslscan` |
+
+Credential attacks (`hydra`, `evil-winrm`) and nmap `--script vuln` are **off**
+and require `allow_intrusive: true` **and** `--intrusive --confirm-intrusive`.
 
 ---
 

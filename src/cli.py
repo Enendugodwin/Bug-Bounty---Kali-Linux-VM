@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import assess as assess_mod
 from . import cve as cve_mod
+from . import infra as infra_mod
 from . import intrusive as intrusive_mod
 from . import matrix as matrix_mod
 from . import report as report_mod
@@ -281,6 +282,50 @@ def _cmd_serve(args) -> int:
     return 0
 
 
+def _cmd_infra(args) -> int:
+    if args.intrusive and not args.confirm_intrusive:
+        print("Refused: intrusive infra tooling requires --intrusive and "
+              "--confirm-intrusive.")
+        return 2
+    if args.confirm_intrusive and not args.intrusive:
+        print("Refused: --confirm-intrusive only applies with --intrusive.")
+        return 2
+    try:
+        a = infra_mod.run_infra(
+            args.target,
+            operator=args.operator or "",
+            rate=args.rate,
+            cmd_timeout=args.timeout,
+            include_intrusive=args.intrusive,
+            confirm_intrusive=args.confirm_intrusive,
+            reports_dir=Path(args.report_dir) if args.report_dir else None,
+            job_source="cli",
+        )
+    except PermissionError as exc:
+        print(f"Refused: {exc}")
+        return 2
+
+    if args.json:
+        print(json.dumps(a.to_json(), indent=2))
+        return 0 if a.authorized else 2
+    print(f"\n=== Infra scan: {a.target} ===")
+    print(f"Scope    : {'AUTHORIZED' if a.authorized else 'DENIED'} — {a.scope_reason}")
+    if not a.authorized:
+        return 2
+    s = a.summary()
+    print("Findings : " + ", ".join(
+        f"{k}={s[k]}" for k in ("critical", "high", "medium", "low", "info")
+    ) + f", total={s['total']}")
+    if a.job_id:
+        print(f"Job ID   : {a.job_id}")
+    for c in a.commands:
+        print(f"  - [{c.get('exit_code')}] {c.get('command')[:150]}")
+    if a.report_md:
+        print(f"Report   : {a.report_md}")
+        print(f"JSON     : {a.report_json}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="kpm",
@@ -396,6 +441,26 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
     sp.add_argument("--report-dir", default=None)
     sp.set_defaults(func=_cmd_matrix)
+
+    sp = sub.add_parser(
+        "infra",
+        help="Infrastructure scan (firewalls, Windows/AD, switches, Linux) — "
+             "service-driven and scope-enforced.",
+    )
+    sp.add_argument("target")
+    sp.add_argument("--operator", default="")
+    sp.add_argument("--rate", type=int, default=20,
+                    help="requests/second ceiling (clamped to scope rules).")
+    sp.add_argument("--timeout", type=int, default=900,
+                    help="Max seconds per tool (default 900).")
+    sp.add_argument("--intrusive", action="store_true",
+                    help="Enable gated intrusive tools (nmap vuln scripts, "
+                         "credential attacks).")
+    sp.add_argument("--confirm-intrusive", action="store_true",
+                    help="Confirm intrusive testing is authorized by the program.")
+    sp.add_argument("--json", action="store_true", help="Emit JSON to stdout.")
+    sp.add_argument("--report-dir", default=None)
+    sp.set_defaults(func=_cmd_infra)
 
     sp = sub.add_parser(
         "intrusive",

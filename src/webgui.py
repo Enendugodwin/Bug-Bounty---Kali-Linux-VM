@@ -27,6 +27,7 @@ from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
 from starlette.routing import Route
 
 from . import cve as cve_mod
+from . import infra as infra_mod
 from . import jobs as jobs_mod
 from . import matrix as matrix_mod
 from . import report as report_mod
@@ -42,17 +43,28 @@ PROFILES = {
     "cve": lambda target, operator, emit, job_id: cve_mod.run_cve_scan(
         target, operator=operator, on_event=emit, job_id=job_id,
         job_source="webgui"),
+    "infra": lambda target, operator, emit, job_id: infra_mod.run_infra(
+        target, operator=operator, on_event=emit, job_id=job_id,
+        job_source="webgui"),
 }
-LEAD_AGENT = {"matrix": "Matrix Agent", "cve": "CVE Agent"}
+LEAD_AGENT = {"matrix": "Matrix Agent", "cve": "CVE Agent",
+              "infra": "Infra Agent"}
 
 # Scanner processes we recognise as "a scan" even when started outside the GUI.
 _EXT_TOOLS = {"nuclei", "nmap", "nikto", "gobuster", "ffuf", "dirb", "wapiti",
-              "wpscan", "sqlmap", "whatweb", "enum4linux", "dnsrecon", "dig"}
+              "wpscan", "sqlmap", "whatweb", "enum4linux", "dnsrecon", "dig",
+              "nxc", "netexec", "enum4linux-ng", "snmpwalk", "onesixtyone",
+              "showmount", "ike-scan", "sslscan"}
 _EXT_AGENT = {
     "whatweb": "Recon Agent", "nmap": "Recon Agent", "dnsrecon": "Recon Agent",
     "dig": "Recon Agent", "gobuster": "Web Agent", "ffuf": "Web Agent",
     "dirb": "Web Agent", "nikto": "Web Agent", "wapiti": "Web Agent",
     "wpscan": "Web Agent", "nuclei": "CVE Agent", "sqlmap": "Exploit Agent",
+    "nxc": "Infra Agent", "netexec": "Infra Agent",
+    "enum4linux-ng": "Infra Agent", "enum4linux": "Infra Agent",
+    "snmpwalk": "Infra Agent", "onesixtyone": "Infra Agent",
+    "showmount": "Infra Agent", "ike-scan": "Infra Agent",
+    "sslscan": "Infra Agent",
 }
 
 
