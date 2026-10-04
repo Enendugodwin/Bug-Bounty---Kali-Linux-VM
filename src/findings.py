@@ -433,6 +433,42 @@ def dedupe(findings: list[Finding]) -> list[Finding]:
     return sorted(best.values(), key=lambda x: (_RANK[x.severity], x.title))
 
 
+# ---------------------------------------------------------------------------
+# WAF block-page artifact quarantine
+# ---------------------------------------------------------------------------
+# When an edge/WAF answers a scanner probe with a block or challenge page, the
+# scanner's parser can mistake that page for a finding (e.g. nikto reporting an
+# "uncommon header x-iinfo", or an RFC-1918 IP from the block page). These
+# markers let us quarantine such artifacts instead of presenting them as
+# vulnerabilities. Real findings rarely quote these strings in their evidence.
+
+_WAF_ARTIFACT_MARKERS = (
+    "x-iinfo", "incap_ses", "visid_incap", "incapsula",
+    "_incapsula_resource", "incapsula incident id",
+    "request unsuccessful", "cf-mitigated", "attention required",
+    "error 1010", "error 1020", "just a moment",
+    "checking your browser", "sucuri website firewall", "x-sucuri-id",
+    "ddos-guard", "bigipserver", "the requested url was rejected",
+)
+
+
+def is_waf_block_artifact(f: Finding) -> bool:
+    """True when a finding's own text quotes a WAF block/challenge page."""
+    blob = f"{f.title}\n{f.description}\n{f.evidence}".lower()
+    return any(marker in blob for marker in _WAF_ARTIFACT_MARKERS)
+
+
+def quarantine_waf_artifacts(
+    findings: list[Finding],
+) -> tuple[list[Finding], list[Finding]]:
+    """Split findings into ``(kept, quarantined)`` by block-page markers."""
+    kept: list[Finding] = []
+    quarantined: list[Finding] = []
+    for f in findings:
+        (quarantined if is_waf_block_artifact(f) else kept).append(f)
+    return kept, quarantined
+
+
 def summarize(findings: list[Finding]) -> dict:
     counts = {s: 0 for s in SEVERITIES}
     for f in findings:

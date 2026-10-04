@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import findings as findings_mod
-from . import jobs, memory, report as report_mod, runner, scope
+from . import jobs, memory, report as report_mod, runner, scope, waf
 from .assess import redact_secrets as _base_redact
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -350,6 +350,33 @@ def run_cve_scan(
     urls = list(dict.fromkeys(urls))
     if not urls:
         raise PermissionError("No target URLs remain after scope port/scheme restrictions.")
+
+    # --- WAF / edge block preflight ----------------------------------
+    # A block/challenge page would make nuclei/nmap report edge artifacts as
+    # CVEs. Detect it first and report the scan as INCONCLUSIVE.
+    user_agent = str(rules.get("user_agent") or "KaliPentestMCP/1.0")
+    block = waf.detect_block(target, user_agent=user_agent)
+    if block.kind or block.vendor:
+        a.block = block.to_dict()
+    if block.blocked:
+        a.scan_status = "inconclusive"
+        a.finished = _iso()
+        lines = [
+            "## Scan inconclusive — edge/WAF block",
+            f"- {block.describe()}",
+            "- No scanner results are reported because the target refused "
+            "the automated requests.",
+        ]
+        lines += [f"- {ev}" for ev in block.evidence]
+        a.notes = (a.notes or "") + "\n".join(lines)
+        a.report_md, a.report_json = report_mod.write_report(a, reports_dir)
+        emit(type="waf_block", target=target, vendor=block.vendor,
+             status=block.status, evidence=block.evidence)
+        emit(type="scan_done", status="blocked", findings=a.summary(),
+             report_md=a.report_md, report_json=a.report_json,
+             reason=block.describe())
+        return a
+
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     tag = _safe(host)
     rec = _Rec(target, a, on_event=emit)

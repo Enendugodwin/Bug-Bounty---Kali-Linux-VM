@@ -38,6 +38,8 @@ class Assessment:
     findings: list[Finding] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
     raw: dict[str, str] = field(default_factory=dict)
+    scan_status: str = "complete"
+    block: dict = field(default_factory=dict)
     notes: str = ""
     report_md: str = ""
     report_json: str = ""
@@ -59,6 +61,8 @@ class Assessment:
                 "rules": self.rules,
                 "started": self.started,
                 "finished": self.finished,
+                "scan_status": self.scan_status,
+                "block": self.block,
                 "generated": datetime.now(timezone.utc).isoformat(),
                 "tool": "kali-pentest-mcp",
             },
@@ -105,6 +109,13 @@ def render_markdown(a: Assessment) -> str:
     lines.append(f"| Started | {a.started or '—'} |")
     lines.append(f"| Finished | {a.finished or '—'} |")
     lines.append(f"| Scope decision | {'✅ AUTHORIZED' if a.authorized else '⛔ DENIED'} — {a.scope_reason} |")
+    status_label = {
+        "complete": "✅ COMPLETE",
+        "dry_run": "🧪 DRY RUN",
+        "denied": "⛔ DENIED",
+        "inconclusive": "⚠️ INCONCLUSIVE",
+    }.get(a.scan_status, a.scan_status or "—")
+    lines.append(f"| Scan status | {status_label} |")
     lines.append("")
 
     if not a.authorized:
@@ -112,6 +123,29 @@ def render_markdown(a: Assessment) -> str:
                      "by the active scope (`scope.yaml` / `scope.txt`).")
         lines.append("")
         return "\n".join(lines)
+
+    if a.block and a.block.get("blocked"):
+        vendor = a.block.get("vendor") or "an edge/WAF"
+        code = a.block.get("status")
+        lines.append("> ⚠️ **SCAN INCONCLUSIVE — blocked by " + vendor
+                     + (f" (HTTP {code})" if code else "") + ".**")
+        lines.append("> The target's edge/WAF refused the automated requests, so "
+                     "no reliable findings could be collected. Treat any results "
+                     "below as inconclusive and validate manually.")
+        lines.append("")
+
+    # --- WAF / edge protection ---------------------------------------
+    if a.block:
+        lines.append("## 🛡️ WAF / Edge Protection")
+        lines.append("")
+        lines.append(f"- **Vendor**: {a.block.get('vendor') or '—'}")
+        lines.append(f"- **Classification**: {a.block.get('kind') or 'none'} "
+                     f"(blocked={a.block.get('blocked')})")
+        if a.block.get("status"):
+            lines.append(f"- **HTTP status**: {a.block['status']}")
+        for ev in (a.block.get("evidence") or []):
+            lines.append(f"- {ev}")
+        lines.append("")
 
     # --- Rules of engagement -----------------------------------------
     if rules:
@@ -231,5 +265,7 @@ def load_assessment(json_path: str | Path) -> Assessment:
         commands=data.get("commands", []) or [],
         findings=fs,
         artifacts=data.get("artifacts", []) or [],
+        scan_status=meta.get("scan_status", "complete"),
+        block=meta.get("block", {}) or {},
         notes=data.get("notes", ""),
     )

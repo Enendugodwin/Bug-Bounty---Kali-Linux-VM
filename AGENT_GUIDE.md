@@ -155,6 +155,27 @@ listings, and files containing secrets. Severity is promoted accordingly and
 the `web` profile (`fetch_exposed_files: true`, capped by
 `max_evidence_fetches`), or on demand via `python -m src.cli enrich`.
 
+## 🛡️ WAF / edge block detection
+
+Before the `web`, `matrix`, and `cve` profiles run any scanner, they send a
+single polite probe to the target. If the edge answers with a **block or
+challenge page** (Imperva/Incapsula, Cloudflare, Akamai, Sucuri, F5, AWS WAF,
+DDoS-Guard, ...), the scan is stopped and marked **INCONCLUSIVE** rather than
+reporting the block page's contents as findings:
+
+- `Assessment.scan_status` becomes `inconclusive`, and `Assessment.block`
+  records the vendor, HTTP status, and evidence.
+- The report shows a prominent banner and a **WAF / Edge Protection** section,
+  and no scanner results are emitted.
+- As a second line of defence, if a scanner still captures a block-page
+  artifact (e.g. nikto reporting header `x-iinfo`), `quarantine_waf_artifacts()`
+  moves it out of the findings and notes it under *Scope-safe omissions*.
+
+A normal `200` that merely carries a WAF header (e.g. Cloudflare `cf-ray`) is
+**not** treated as blocked. To deliberately scan through the edge, the `assess`
+command accepts `--ignore-block`; use it only when you are sure the program
+permits testing through its WAF.
+
 ## 🔒 Intrusive validation (opt-in)
 
 `src/intrusive.py` validates a vulnerability with a **harmless** probe — by

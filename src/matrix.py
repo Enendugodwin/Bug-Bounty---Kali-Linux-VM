@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import findings as findings_mod
-from . import jobs, memory, report as report_mod, runner, scope
+from . import jobs, memory, report as report_mod, runner, scope, waf
 from .cve import parse_nmap_vuln, parse_nuclei, redact
 from .findings import Finding, dedupe, parse_output
 
@@ -390,6 +390,32 @@ def run_matrix(
         raise PermissionError(
             "scope.yaml rules.allow_intrusive must be true for SQLMap."
         )
+
+    # --- WAF / edge block preflight ----------------------------------
+    # Stop before the tool matrix if the edge refuses our probes; otherwise
+    # every scanner reports block-page artifacts as findings.
+    user_agent = str(sc.rules.get("user_agent") or "KaliPentestMCP/1.0")
+    block = waf.detect_block(target, user_agent=user_agent)
+    if block.kind or block.vendor:
+        a.block = block.to_dict()
+    if block.blocked:
+        a.scan_status = "inconclusive"
+        a.finished = _iso()
+        lines = [
+            "## Scan inconclusive — edge/WAF block",
+            f"- {block.describe()}",
+            "- No scanner results are reported because the target refused "
+            "the automated requests.",
+        ]
+        lines += [f"- {ev}" for ev in block.evidence]
+        a.notes = (a.notes or "") + "\n".join(lines)
+        a.report_md, a.report_json = report_mod.write_report(a, reports_dir)
+        emit(type="waf_block", target=target, vendor=block.vendor,
+             status=block.status, evidence=block.evidence)
+        emit(type="scan_done", status="blocked", findings=a.summary(),
+             report_md=a.report_md, report_json=a.report_json,
+             reason=block.describe())
+        return a
 
     host = scope.normalize_host(target)
     url = f"https://{host}"

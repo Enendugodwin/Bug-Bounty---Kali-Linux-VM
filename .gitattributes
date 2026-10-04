@@ -1,0 +1,17 @@
+# Normalize text files to LF in the repository so a Windows checkout cannot
+# introduce CRLF churn (this project targets Linux/Kali).
+* text=auto eol=lf
+
+# Common binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.pkl binary
+*.sqlite3 binary
+*.pyc binary

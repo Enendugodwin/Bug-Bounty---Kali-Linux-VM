@@ -65,6 +65,7 @@ def _cmd_assess(args) -> int:
         dry_run=args.dry_run,
         all_web_ports=args.all_ports,
         nikto_maxtime=args.nikto_maxtime,
+        ignore_block=args.ignore_block,
         write_report=not args.no_report,
         reports_dir=Path(args.report_dir) if args.report_dir else None,
         job_source="cli",
@@ -304,6 +305,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--all-ports", action="store_true",
                     help="Scan every http port nmap finds, not just 80/443 "
                          "(slower, mostly needed behind CDNs).")
+    sp.add_argument("--ignore-block", action="store_true",
+                    help="Proceed even if the edge returns a WAF block page "
+                         "(unreliable; only when the program permits it).")
     sp.add_argument("--nikto-maxtime", type=int, default=None,
                     metavar="SECONDS",
                     help="Max seconds nikto spends per host (default 120; "

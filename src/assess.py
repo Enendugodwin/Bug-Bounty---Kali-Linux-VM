@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import findings as findings_mod
-from . import jobs, memory, report as report_mod, runner, scope
+from . import jobs, memory, report as report_mod, runner, scope, waf
 
 log = logging.getLogger("kpm.assess")
 
@@ -209,6 +209,13 @@ def enrich_findings(finding_list: list, timeout: int = 20,
             continue
         m = _STATUS_RE.search(f.evidence or "")
         if not m or int(m.group(1)) != 200 or fetches >= max_fetches:
+            out.append(f)
+            continue
+
+        # Defense in depth: never fetch an endpoint the active scope excludes,
+        # even if a caller forgot to filter the finding list first.
+        endpoint_allowed, _ep_reason = scope.check(f.endpoint)
+        if not endpoint_allowed:
             out.append(f)
             continue
 
@@ -428,42 +435,6 @@ def _scope_filtered_wordlist(wordlist: str, base: str, active_scope,
     return tmp.name, Path(tmp.name), removed
 
 
-def _scope_filtered_wordlist(wordlist: str, base: str, active_scope,
-                             target_tag: str, port: int,
-                             stamp: str) -> tuple[str, Path | None, int]:
-    """Create a temporary wordlist with every out-of-scope path removed."""
-    if not active_scope.ex_paths:
-        return wordlist, None, 0
-
-    kept: list[str] = []
-    removed = 0
-    with Path(wordlist).open("r", encoding="utf-8", errors="replace") as stream:
-        for raw in stream:
-            entry = raw.strip()
-            if not entry or entry.startswith("#"):
-                continue
-            clean = entry.lstrip("/")
-            if ".." in Path(clean).parts or "://" in clean:
-                removed += 1
-                continue
-            candidate = f"{base.rstrip('/')}/{clean}"
-            allowed, _reason = active_scope.check(candidate)
-            if allowed:
-                kept.append(entry)
-            else:
-                removed += 1
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", prefix=f"{target_tag}_{port}_scope_",
-        suffix=".txt", dir=runner.ARTIFACT_DIR, delete=False,
-    )
-    try:
-        tmp.write("\n".join(kept) + ("\n" if kept else ""))
-    finally:
-        tmp.close()
-    return tmp.name, Path(tmp.name), removed
-
-
 def run_assessment(
     target: str,
     profile: str = "web",
@@ -478,6 +449,7 @@ def run_assessment(
     nikto_timeout: int = NIKTO_TIMEOUT,
     nikto_maxtime: int | None = None,
     web_timeout: int = 300,
+    ignore_block: bool = False,
     reports_dir: Path | None = None,
     on_event=None,
     job_id: str | None = None,
@@ -517,6 +489,7 @@ def run_assessment(
     assessment.job_id = jid
 
     if not allowed:
+        assessment.scan_status = "denied"
         assessment.finished = _iso()
         log.warning("assessment denied for %s: %s", target, reason)
         if not dry_run and write_report:
@@ -601,10 +574,47 @@ def run_assessment(
                 "artifact": "", "timeout": None,
             })
         assessment.finished = _iso()
+        assessment.scan_status = "dry_run"
         assessment.notes = "DRY RUN — no commands were executed."
         emit(type="scan_done", status="done", findings=assessment.summary(),
              report_md=None, report_json=None)
         return assessment
+
+    # ------------------------------------------------------------------
+    # WAF / edge block preflight
+    # ------------------------------------------------------------------
+    # A WAF that refuses our probe (e.g. Imperva/Cloudflare 403/429/503 with a
+    # block page) makes every downstream scanner report block-page artifacts as
+    # findings. Detect that up front and report the scan as INCONCLUSIVE rather
+    # than dressing up the block page as vulnerabilities.
+    if do_web and not ignore_block:
+        block = waf.detect_block(target, user_agent=user_agent)
+        if block.kind or block.vendor:
+            assessment.block = block.to_dict()
+        if block.blocked:
+            assessment.scan_status = "inconclusive"
+            assessment.finished = _iso()
+            lines = [
+                "## Scan inconclusive — edge/WAF block",
+                f"- {block.describe()}",
+                "- No scanner results are reported because the target refused "
+                "the automated requests. Validate manually or from an "
+                "allow-listed source if the program permits.",
+            ]
+            lines += [f"- {ev}" for ev in block.evidence]
+            assessment.notes = (assessment.notes or "") + "\n".join(lines)
+            log.warning("assessment inconclusive for %s: %s",
+                        target, block.describe())
+            emit(type="waf_block", target=target, vendor=block.vendor,
+                 status=block.status, evidence=block.evidence)
+            if write_report:
+                assessment.report_md, assessment.report_json = \
+                    report_mod.write_report(assessment, reports_dir)
+            emit(type="scan_done", status="blocked",
+                 findings=assessment.summary(),
+                 report_md=assessment.report_md,
+                 report_json=assessment.report_json, reason=block.describe())
+            return assessment
 
     # ------------------------------------------------------------------
     # Network profile / recon
@@ -741,6 +751,14 @@ def run_assessment(
                 f"filtered out-of-scope finding endpoint {finding.endpoint}: {endpoint_reason}"
             )
     assessment.findings = in_scope_findings
+    assessment.findings, waf_artifacts = findings_mod.quarantine_waf_artifacts(
+        assessment.findings
+    )
+    if waf_artifacts:
+        skipped_steps.append(
+            f"suppressed {len(waf_artifacts)} WAF block-page artifact(s) "
+            "from scanner output"
+        )
     assessment.findings = findings_mod.dedupe(assessment.findings)
     if do_web and rules.get("fetch_exposed_files", True):
         assessment.findings = enrich_findings(
