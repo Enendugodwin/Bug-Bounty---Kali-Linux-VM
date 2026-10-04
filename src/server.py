@@ -141,13 +141,15 @@ def scope_check(target: str) -> str:
 
 @mcp.tool()
 def assess_target(target: str, profile: str = "web", operator: str = "",
-                  dry_run: bool = False) -> str:
+                  dry_run: bool = False, deep: bool = False) -> str:
     """Run a full scope-checked assessment and write a review report.
 
     profile: web | network | full. Refuses to touch out-of-scope targets.
+    deep: use the full wordlist and also run the nuclei web sweep.
     """
     a = assess_mod.run_assessment(
         target, profile=profile, operator=operator, dry_run=dry_run,
+        deep=deep, nuclei=deep,
         job_source="mcp",
     )
     if not a.authorized:

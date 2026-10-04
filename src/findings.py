@@ -312,10 +312,94 @@ def parse_ffuf_json(text: str, target: str, base_url: str = "") -> list[Finding]
     return findings
 
 
+# feroxbuster default output, e.g.:
+#   200      GET        1l        1w        3c http://host/index.html
+#   301      GET        0l        0w        0c http://host/admin => http://host/admin/
+_FEROX_RE = re.compile(
+    r"^\s*(\d{3})\s+([A-Z]+)\s+\d+l\s+\d+w\s+\d+c\s+(\S+)"
+    r"(?:\s+=>\s+(\S+))?\s*$"
+)
+
+
+def parse_feroxbuster(stdout: str, target: str, base_url: str = "") -> list[Finding]:
+    findings: list[Finding] = []
+    for raw in (stdout or "").splitlines():
+        m = _FEROX_RE.match(raw)
+        if not m:
+            continue
+        status, _method, url, _redirect = (
+            int(m.group(1)), m.group(2), m.group(3), m.group(4)
+        )
+        # Skip the base URL itself (feroxbuster always reports it).
+        if urlsplit(url).path in ("", "/"):
+            continue
+        low = url.lower()
+        if 300 <= status < 400 or status in (401, 403):
+            sev = "info"
+        else:
+            sev = "low"
+            if status == 200:
+                for needle, s in _SENSITIVE_PATHS:
+                    if needle in low:
+                        sev = s
+                        break
+        findings.append(_mk(
+            f"Discovered path: {url}", sev, target, "feroxbuster",
+            endpoint=url,
+            confidence="high" if status == 200 else "low",
+            description=(f"feroxbuster found a resource (HTTP {status})."),
+            evidence=raw.strip(),
+            remediation=("Confirm whether this resource should be publicly "
+                         "reachable; restrict or remove if not."),
+            references=["https://owasp.org/www-community/attacks/Forced_browsing"],
+        ))
+    return findings
+
+
+def parse_httpx(stdout: str, target: str, base_url: str = "") -> list[Finding]:
+    """Parse ProjectDiscovery httpx JSONL into informational fingerprints."""
+    findings: list[Finding] = []
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        url = d.get("url") or d.get("input") or base_url or target
+        status = d.get("status_code")
+        title = d.get("title") or ""
+        server = d.get("webserver") or ""
+        tech = d.get("tech") or []
+        if isinstance(tech, str):
+            tech = [tech]
+        bits = []
+        if status:
+            bits.append(f"HTTP {status}")
+        if title:
+            bits.append(f"title={title!r}")
+        if server:
+            bits.append(f"server={server}")
+        if tech:
+            bits.append("tech=" + ", ".join(str(t) for t in tech))
+        findings.append(_mk(
+            "HTTP fingerprint (httpx)", "info", target, "httpx",
+            endpoint=url, confidence="high",
+            description="Technology/response fingerprint: " + ("; ".join(bits) or "response"),
+            evidence=json.dumps(d)[:1500],
+            remediation="Reduce exposed version/banner information where feasible.",
+            references=["https://github.com/projectdiscovery/httpx"],
+        ))
+    return findings
+
+
 _PARSERS = {
     "nmap": lambda out, t, u="": parse_nmap(out, t),
     "nikto": parse_nikto,
     "gobuster": parse_gobuster,
+    "feroxbuster": parse_feroxbuster,
+    "httpx": parse_httpx,
     "ffuf": parse_ffuf_json,
 }
 
@@ -375,7 +459,7 @@ def _canonical_key(f: Finding) -> tuple[str, str, str]:
         return ("sensitive-file", endpoint, "")
 
     title = f.title.strip().lower()
-    discovery_tools = {"gobuster", "dirb", "ffuf"}
+    discovery_tools = {"gobuster", "feroxbuster", "dirb", "ffuf"}
     if f.tool.lower() in discovery_tools or "discovered path" in title:
         return ("web-resource", endpoint, "")
 

@@ -62,6 +62,7 @@ def _cmd_assess(args) -> int:
         operator=args.operator or "",
         wordlist=args.wordlist,
         deep=args.deep,
+        nuclei=args.nuclei or args.deep,
         dry_run=args.dry_run,
         all_web_ports=args.all_ports,
         nikto_maxtime=args.nikto_maxtime,
@@ -299,7 +300,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--operator", default="")
     sp.add_argument("--wordlist", default=None)
     sp.add_argument("--deep", action="store_true",
-                    help="Use the full seclists wordlist (slower).")
+                    help="Use the full seclists wordlist and enable the nuclei "
+                         "web sweep (slower).")
+    sp.add_argument("--nuclei", action="store_true",
+                    help="Run a nuclei sweep (medium,high,critical) in the web "
+                         "profile; also implied by --deep.")
     sp.add_argument("--dry-run", action="store_true",
                     help="Show the plan without executing anything.")
     sp.add_argument("--all-ports", action="store_true",

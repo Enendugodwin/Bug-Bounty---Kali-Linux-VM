@@ -239,7 +239,7 @@ class PersistentJobTests(unittest.TestCase):
                     )
                 saved = jobs.get_job(assessment.job_id)
                 self.assertEqual(saved["status"], "done")
-                self.assertEqual(len(saved["steps"]), 3)
+                self.assertEqual(len(saved["steps"]), 4)
                 self.assertTrue(all(s["status"] == "done" for s in saved["steps"]))
             finally:
                 jobs.DB_PATH = old_path

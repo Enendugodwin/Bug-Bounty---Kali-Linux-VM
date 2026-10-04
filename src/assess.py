@@ -31,6 +31,7 @@ import math
 import os
 import re
 import shlex
+import shutil
 import tempfile
 import threading
 import uuid
@@ -46,6 +47,12 @@ log = logging.getLogger("kpm.assess")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BUNDLED_WORDLIST = PROJECT_ROOT / "wordlists" / "web-small.txt"
 SECLISTS_COMMON = Path("/usr/share/seclists/Discovery/Web-Content/common.txt")
+
+# Preferred content-discovery and fingerprinting tools when installed.
+# feroxbuster recurses and auto-calibrates soft-404s; httpx-toolkit is the
+# ProjectDiscovery prober (the bare `httpx` is the unrelated Python client).
+FEROXBUSTER = shutil.which("feroxbuster")
+HTTPX_BIN = shutil.which("httpx-toolkit")
 
 WEB_PORTS = {80, 443, 8080, 8443, 8000, 8888}
 
@@ -116,6 +123,22 @@ _EXPOSED_PATTERNS = [
 ]
 
 _STATUS_RE = re.compile(r"\(Status:\s*(\d+)\)", re.I)
+
+# Tools whose "discovered path" findings are worth fetching body evidence for.
+_DISCOVERY_TOOLS = {"gobuster", "feroxbuster", "dirb", "ffuf"}
+_FEROX_STATUS_RE = re.compile(r"^\s*(\d{3})\s+[A-Z]+\s")
+
+
+def _finding_status(f) -> int | None:
+    """Extract the HTTP status from a discovery finding's evidence."""
+    m = _STATUS_RE.search(f.evidence or "")
+    if m:
+        return int(m.group(1))
+    m = _FEROX_STATUS_RE.match(f.evidence or "")
+    if m:
+        return int(m.group(1))
+    return None
+
 
 _RANK = {s: i for i, s in enumerate(findings_mod.SEVERITIES)}
 
@@ -204,11 +227,10 @@ def enrich_findings(finding_list: list, timeout: int = 20,
     fetches = 0
 
     for f in finding_list:
-        if (f.tool or "").lower() != "gobuster":
+        if (f.tool or "").lower() not in _DISCOVERY_TOOLS:
             out.append(f)
             continue
-        m = _STATUS_RE.search(f.evidence or "")
-        if not m or int(m.group(1)) != 200 or fetches >= max_fetches:
+        if _finding_status(f) != 200 or fetches >= max_fetches:
             out.append(f)
             continue
 
@@ -400,6 +422,32 @@ def _gobuster_argv(base: str, wordlist: str, threads: int,
     return argv
 
 
+def _feroxbuster_argv(base: str, wordlist: str, threads: int, user_agent: str,
+                      rate: int, depth: int = 2) -> list[str]:
+    """feroxbuster recurses and auto-filters soft-404s (better than gobuster)."""
+    return [
+        "feroxbuster", "-u", base, "-w", wordlist,
+        "-t", str(max(1, threads)), "-d", str(depth),
+        "--rate-limit", str(max(1, rate)), "--timeout", "10",
+        "--no-state", "-k", "-q",
+        "-s", "200", "204", "301", "302", "307", "308", "401", "403",
+        "-a", user_agent,
+    ]
+
+
+def _httpx_argv(bases: list[str], user_agent: str, timeout: int = 10) -> list[str]:
+    """ProjectDiscovery httpx fingerprint probe (one request per base URL)."""
+    argv = [
+        "httpx-toolkit", "-json", "-silent", "-no-color",
+        "-status-code", "-title", "-server", "-tech-detect",
+        "-timeout", str(timeout), "-retries", "1",
+        "-H", f"User-Agent: {user_agent}",
+    ]
+    for base in bases:
+        argv += ["-u", base]
+    return argv
+
+
 def _scope_filtered_wordlist(wordlist: str, base: str, active_scope,
                              target_tag: str, port: int,
                              stamp: str) -> tuple[str, Path | None, int]:
@@ -442,6 +490,7 @@ def run_assessment(
     operator: str = "",
     wordlist: str | None = None,
     deep: bool = False,
+    nuclei: bool = False,
     dry_run: bool = False,
     all_web_ports: bool = False,
     write_report: bool = True,
@@ -562,10 +611,22 @@ def run_assessment(
                             "--host-timeout", NMAP_HOST_TIMEOUT,
                             "-p", ",".join(str(p) for p in web_scan_ports),
                             host])
+            if HTTPX_BIN:
+                planned.append(_httpx_argv(
+                    [f"https://{host}", f"http://{host}"], user_agent))
             planned.append(_nikto_argv(f"https://{host}", maxtime))
-            planned.append(["gobuster", "dir", "-u", f"https://{host}",
-                            "-w", wordlist or "<wordlist>",
-                            "-t", str(threads), "-q", "--no-error", "-k"])
+            if FEROXBUSTER:
+                planned.append(_feroxbuster_argv(
+                    f"https://{host}", wordlist or "<wordlist>",
+                    min(threads, max(1, rps)), user_agent, rps))
+            else:
+                planned.append(["gobuster", "dir", "-u", f"https://{host}",
+                                "-w", wordlist or "<wordlist>",
+                                "-t", str(threads), "-q", "--no-error", "-k"])
+            if nuclei:
+                planned.append(["nuclei", "-jsonl", "-silent",
+                                "-severity", "medium,high,critical",
+                                "-u", f"https://{host}"])
         for argv in planned:
             assessment.commands.append({
                 "tool": argv[0],
@@ -659,21 +720,40 @@ def run_assessment(
                 p for p in (allowed_ports or []) if p in WEB_PORTS
             ] or [443, 80]
 
+        discovery_tool = "feroxbuster" if FEROXBUSTER else "gobuster"
+        web_bases = [_base_url(host, port) for port in web_ports]
+
         web_plan = list(initial_plan)
+        if HTTPX_BIN:
+            web_plan.append({"key": "httpx", "label": "httpx fingerprint",
+                             "agent": "Recon Agent", "timeout": 60})
         for port in web_ports:
             base = _base_url(host, port)
             web_plan.append({"key": f"nikto@{port}",
                              "label": f"nikto [{base}]", "agent": "Web Agent",
                              "timeout": eff_nikto_timeout})
             if wordlist and Path(wordlist).exists():
-                web_plan.append({"key": f"gobuster@{port}",
-                                 "label": f"gobuster [{base}]", "agent": "Web Agent",
-                                 "timeout": web_timeout})
+                web_plan.append({"key": f"{discovery_tool}@{port}",
+                                 "label": f"{discovery_tool} [{base}]",
+                                 "agent": "Web Agent", "timeout": web_timeout})
+        if nuclei:
+            web_plan.append({"key": "nuclei", "label": "nuclei (web)",
+                             "agent": "CVE Agent", "timeout": web_timeout})
         emit(type="plan", steps=web_plan)
 
         if len(web_ports) > 1:
             log.info("web ports to scan: %s (parallel=%d)",
                      web_ports, min(len(web_ports), WEB_WORKERS))
+
+        # --- Fast fingerprint (httpx-toolkit) -------------------------
+        if HTTPX_BIN:
+            run.execute("httpx", _httpx_argv(web_bases, user_agent),
+                        timeout=60, artifact=f"{tag}_httpx_{stamp}.txt",
+                        key="httpx")
+        else:
+            emit(type="step_skipped", key="httpx",
+                 label="httpx fingerprint", agent="Recon Agent",
+                 reason="httpx-toolkit not installed")
 
         def _scan_port(port: int) -> None:
             base = _base_url(host, port)
@@ -692,21 +772,36 @@ def run_assessment(
                     scoped_wordlist, temporary_wordlist, removed = \
                         _scope_filtered_wordlist(wordlist, base, sc, tag,
                                                  port, stamp)
+                    tool_name = "feroxbuster" if FEROXBUSTER else "gobuster"
                     if removed:
                         skipped_steps.append(
-                            f"gobuster [{base}] omitted {removed} out-of-scope wordlist paths"
+                            f"{tool_name} [{base}] omitted {removed} "
+                            "out-of-scope wordlist paths"
                         )
                     try:
                         if Path(scoped_wordlist).stat().st_size == 0:
                             reason = "no in-scope paths remain in the wordlist"
-                            skipped_steps.append(f"gobuster [{base}] ({reason})")
-                            emit(type="step_skipped", key=f"gobuster@{port}",
-                                 label=f"gobuster [{base}]", agent="Web Agent",
+                            skipped_steps.append(f"{tool_name} [{base}] ({reason})")
+                            emit(type="step_skipped", key=f"{tool_name}@{port}",
+                                 label=f"{tool_name} [{base}]", agent="Web Agent",
                                  reason=reason)
+                        elif FEROXBUSTER:
+                            # feroxbuster recurses and auto-calibrates soft-404s;
+                            # its own --rate-limit honours the scope ceiling.
+                            run.execute(
+                                "feroxbuster",
+                                _feroxbuster_argv(base, scoped_wordlist,
+                                                  min(threads, max(1, rps)),
+                                                  user_agent, rps),
+                                timeout=web_timeout,
+                                artifact=f"{tag}_feroxbuster_{port}_{stamp}.txt",
+                                base_url=base, key=f"feroxbuster@{port}",
+                            )
                         else:
                             # With path-specific exclusions, run sequentially
                             # and pace requests at the configured scope rate.
-                            gobuster_threads = 1 if sc.ex_paths else min(threads, max(1, rps))
+                            gobuster_threads = (1 if sc.ex_paths
+                                                else min(threads, max(1, rps)))
                             delay_ms = (math.ceil(1000 / max(1, rps))
                                         if sc.ex_paths else
                                         math.ceil(1000 * gobuster_threads / max(1, rps)))
@@ -734,6 +829,68 @@ def run_assessment(
             else:
                 with ThreadPoolExecutor(max_workers=workers) as pool:
                     list(pool.map(_scan_port, web_ports))
+
+        # --- Nuclei (opt-in via --deep / --nuclei) --------------------
+        if nuclei:
+            from .cve import parse_nuclei, redact as _redact_cve
+            nurls: list[str] = []
+            for port in web_ports:
+                b = _base_url(host, port)
+                if b not in nurls:
+                    nurls.append(b)
+            n_argv = [
+                "nuclei", "-jsonl", "-silent", "-no-interactsh",
+                "-disable-update-check", "-rate-limit", str(max(1, rps)),
+                "-concurrency", str(threads), "-timeout", "5",
+                "-retries", "0", "-etags", "dos,fuzz",
+                "-severity", "medium,high,critical",
+            ]
+            for u in nurls:
+                n_argv += ["-u", u]
+            emit(type="step_start", key="nuclei", label="nuclei (web)",
+                 tool="nuclei", agent="CVE Agent", timeout=web_timeout,
+                 command=" ".join(shlex.quote(x) for x in n_argv))
+            n_res = None
+            try:
+                n_res = runner.run(n_argv, timeout=web_timeout, artifact_name=None)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("nuclei failed: %s", exc)
+                emit(type="step_end", key="nuclei", label="nuclei (web)",
+                     agent="CVE Agent", status="error", exit_code=None,
+                     duration_ms=None, findings=0)
+            if n_res is not None:
+                n_raw = n_res.stdout or ""
+                if n_res.stderr:
+                    n_raw += "\n--- stderr ---\n" + n_res.stderr
+                n_safe = _redact_cve(n_raw)
+                n_artifact = runner.ARTIFACT_DIR / f"{tag}_nuclei_{stamp}.txt"
+                n_artifact.parent.mkdir(parents=True, exist_ok=True)
+                n_artifact.write_text(n_safe, encoding="utf-8")
+                n_parsed = parse_nuclei(n_res.stdout or "", target)
+                assessment.commands.append({
+                    "tool": "nuclei",
+                    "command": " ".join(shlex.quote(x) for x in n_argv),
+                    "exit_code": n_res.exit_code,
+                    "duration_ms": n_res.duration_ms,
+                    "artifact": str(n_artifact),
+                    "timeout": web_timeout,
+                })
+                assessment.artifacts.append(str(n_artifact))
+                assessment.raw["nuclei"] = n_safe
+                assessment.findings.extend(n_parsed)
+                try:
+                    memory.memory.add_document(
+                        text=n_safe,
+                        metadata={"tool": "nuclei", "target": target,
+                                  "exit_code": n_res.exit_code},
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                emit(type="step_end", key="nuclei", label="nuclei (web)",
+                     agent="CVE Agent",
+                     status=("done" if n_res.exit_code == 0 else "error"),
+                     exit_code=n_res.exit_code, duration_ms=n_res.duration_ms,
+                     findings=len(n_parsed))
 
     # ------------------------------------------------------------------
     # Finalize

@@ -98,9 +98,14 @@ exclusions exist because it cannot reliably guarantee it will avoid them.
 
 | Profile   | What runs                                                        |
 | :-------- | :--------------------------------------------------------------- |
-| `web`     | nmap service scan → if web ports open: `nikto` + `gobuster`      |
+| `web`     | nmap → `httpx` fingerprint → per port: `nikto` + `feroxbuster` (falls back to `gobuster`) |
 | `network` | nmap service scan (top 500 ports)                                |
 | `full`    | network + web                                                    |
+
+Discovery prefers **`feroxbuster`** (recurses, auto-calibrates soft-404s) and
+fingerprints with **`httpx-toolkit`** (ProjectDiscovery) when installed. Add
+`--nuclei` to run a nuclei sweep (medium/high/critical, `dos`/`fuzz` excluded)
+from the `web` profile; `--deep` enables it too alongside the seclists wordlist.
 
 Defaults are deliberately polite (rate-limited, bounded timeouts, curated
 wordlist). Use `--deep` for the full seclists wordlist.
