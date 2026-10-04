@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .findings import Finding, SEVERITIES, summarize
+from .findings import (Finding, SEVERITIES, summarize, cwe_for,
+                       validation_counts)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -69,7 +70,8 @@ class Assessment:
             "summary": self.summary(),
             "commands": self.commands,
             "artifacts": self.artifacts,
-            "findings": [f.to_dict() for f in self.findings],
+            "findings": [{**f.to_dict(), "cwe": cwe_for(f)}
+                         for f in self.findings],
             "notes": self.notes,
         }
 
@@ -165,6 +167,18 @@ def render_markdown(a: Assessment) -> str:
     lines.append(f"| **Total** | **{s.get('total', 0)}** |")
     lines.append("")
 
+    # --- Confidence / validation summary -----------------------------
+    if a.findings:
+        vc = validation_counts(a.findings)
+        lines.append("## 🧪 Confidence & Validation")
+        lines.append("")
+        lines.append("| Validation | Count |")
+        lines.append("| --- | ---: |")
+        for status in ("confirmed", "scanner_match", "needs_manual_validation",
+                       "unverified", "unconfirmed"):
+            lines.append(f"| {status} | {vc.get(status, 0)} |")
+        lines.append("")
+
     # --- Findings table ----------------------------------------------
     if a.findings:
         lines.append("## 🔎 Findings")
@@ -177,6 +191,9 @@ def render_markdown(a: Assessment) -> str:
             lines.append(f"- **Tools**: `{tools}`  |  **Confidence**: {f.confidence}"
                          f"  |  **Validation**: {f.validation_status}"
                          + (f"  |  **Port**: {f.port}" if f.port else ""))
+            cwe = cwe_for(f)
+            if cwe:
+                lines.append(f"- **CWE**: {cwe}")
             if f.description:
                 lines.append(f"- **Description**: {f.description}")
             lines.append("")
@@ -195,6 +212,21 @@ def render_markdown(a: Assessment) -> str:
         lines.append("## 🔎 Findings")
         lines.append("")
         lines.append("No findings were derived from the collected output. Raw output is in the appendix.")
+        lines.append("")
+
+    # --- Needs manual validation -------------------------------------
+    needs = [f for f in a.findings
+             if f.validation_status in ("unverified", "needs_manual_validation",
+                                        "unconfirmed")]
+    if needs:
+        lines.append("## ⚠️ Unverified — Needs Manual Validation")
+        lines.append("")
+        lines.append("Reported by scanners but not independently confirmed — "
+                     "treat these as leads, not findings.")
+        lines.append("")
+        for f in needs:
+            lines.append(f"- `{f.endpoint or a.target}` — {f.title} "
+                         f"({f.tool}, {f.validation_status})")
         lines.append("")
 
     # --- Methodology --------------------------------------------------

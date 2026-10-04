@@ -160,6 +160,15 @@ listings, and files containing secrets. Severity is promoted accordingly and
 the `web` profile (`fetch_exposed_files: true`, capped by
 `max_evidence_fetches`), or on demand via `python -m src.cli enrich`.
 
+**Validation & false-positive reduction**: after discovery, the `web` profile
+re-checks each high-value 200 once (bounded, rate-limited, scope-checked). A
+finding whose re-check no longer returns 200 is marked `unconfirmed` and
+downgraded; a live 200 confirms it. Findings seen by two or more tools are
+marked `scanner_match`. Pure informational noise is dropped. The report carries
+a **Confidence & Validation** summary, a derived **CWE** per finding, and an
+*Unverified — Needs Manual Validation* section so scanner heuristics are not
+read as confirmed.
+
 ## 🛡️ WAF / edge block detection
 
 Before the `web`, `matrix`, and `cve` profiles run any scanner, they send a

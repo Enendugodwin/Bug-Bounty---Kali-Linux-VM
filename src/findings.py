@@ -553,6 +553,76 @@ def quarantine_waf_artifacts(
     return kept, quarantined
 
 
+# ---------------------------------------------------------------------------
+# Validation status + CWE classification + noise filtering
+# ---------------------------------------------------------------------------
+
+# Increasing order of assurance. "unconfirmed" is a negative result (a
+# re-check contradicted the finding) and ranks below "unverified".
+VALIDATION_ORDER = ["unconfirmed", "unverified", "needs_manual_validation",
+                    "scanner_match", "confirmed"]
+
+_CWE_MAP: list[tuple[str, str]] = [
+    (r"\.env|\.git|\.svn|\.hg|secret|credential|password|api[_ -]?key",
+     "CWE-538: Insertion of Sensitive Information into an Externally-Accessible File"),
+    (r"directory (listing|indexing)|index of",
+     "CWE-548: Exposure of Information Through Directory Listing"),
+    (r"sql injection|sqlmap", "CWE-89: SQL Injection"),
+    (r"cross[- ]site scripting|\bxss\b", "CWE-79: Cross-site Scripting"),
+    (r"werkzeug|debug console|flask debug|django debug|debugger",
+     "CWE-489: Active Debug Code"),
+    (r"phpinfo|server-status|actuator|information exposure",
+     "CWE-200: Exposure of Sensitive Information"),
+    (r"default (password|credential|login)", "CWE-1392: Use of Default Credentials"),
+    (r"httponly", "CWE-1004: Sensitive Cookie Without 'HttpOnly' Flag"),
+    (r"content-security-policy|x-frame-options|hsts|strict-transport|"
+     r"security header|protection mechanism",
+     "CWE-693: Protection Mechanism Failure"),
+    (r"cve-\d", "CWE-1395: Dependency on a Vulnerable Component"),
+]
+
+
+def cwe_for(f: Finding) -> str:
+    """Best-effort CWE label for a finding, derived from its text."""
+    text = f"{f.title} {f.description}".lower()
+    for pattern, label in _CWE_MAP:
+        if re.search(pattern, text):
+            return label
+    return ""
+
+
+# Informational, low-signal scanner chatter (mostly nikto) that clutters a
+# report without describing an actionable weakness.
+_NOISE_INFO_RE = re.compile(
+    r"multiple index files found|uncommon header|retrieved via header|"
+    r"alt-svc header|contains \d+ entries which should be manually viewed|"
+    r"unable to connect to",
+    re.I,
+)
+
+
+def is_noise_finding(f: Finding) -> bool:
+    if (f.severity or "").lower() != "info":
+        return False
+    return bool(_NOISE_INFO_RE.search(f.title or ""))
+
+
+def drop_noise(findings: list[Finding]) -> tuple[list[Finding], list[Finding]]:
+    """Split out informational noise; returns ``(kept, dropped)``."""
+    kept: list[Finding] = []
+    dropped: list[Finding] = []
+    for f in findings:
+        (dropped if is_noise_finding(f) else kept).append(f)
+    return kept, dropped
+
+
+def validation_counts(findings: list[Finding]) -> dict:
+    counts = {status: 0 for status in VALIDATION_ORDER}
+    for f in findings:
+        counts[f.validation_status] = counts.get(f.validation_status, 0) + 1
+    return counts
+
+
 def summarize(findings: list[Finding]) -> dict:
     counts = {s: 0 for s in SEVERITIES}
     for f in findings:

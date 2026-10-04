@@ -140,6 +140,59 @@ def _finding_status(f) -> int | None:
     return None
 
 
+def _bump_validation(current: str, target: str) -> str:
+    """Return whichever validation status is stronger."""
+    order = findings_mod.VALIDATION_ORDER
+
+    def rank(status: str) -> int:
+        return order.index(status) if status in order else 0
+
+    return target if rank(target) > rank(current) else current
+
+
+def validate_findings(finding_list: list, *, timeout: int = 15,
+                      max_checks: int = 15) -> list:
+    """Non-intrusive re-confirmation of web findings (bounded GETs).
+
+    * Cross-tool corroboration (two or more sources) upgrades a finding to
+      ``scanner_match``.
+    * Discovery findings already ``confirmed`` by enrichment are left alone.
+    * Discovery 200s that now return a non-200 are marked ``unconfirmed`` and
+      downgraded — likely false positives or stale output.
+    """
+    checks = 0
+    for f in finding_list:
+        if len(set(f.sources or [f.tool])) >= 2:
+            f.validation_status = _bump_validation(f.validation_status,
+                                                   "scanner_match")
+        if checks >= max_checks or f.validation_status == "confirmed":
+            continue
+        if (f.tool or "").lower() not in _DISCOVERY_TOOLS:
+            continue
+        if not (f.endpoint or "").startswith(("http://", "https://")):
+            continue
+        if _finding_status(f) != 200:
+            continue
+        if not scope.check(f.endpoint)[0]:
+            continue
+        checks += 1
+        try:
+            code, _ctype, _body = _http_get(f.endpoint, timeout)
+        except Exception:  # noqa: BLE001
+            continue
+        if code == 200:
+            f.validation_status = _bump_validation(f.validation_status,
+                                                   "confirmed")
+        else:
+            f.validation_status = "unconfirmed"
+            f.confidence = "low"
+            f.description = (
+                f"{f.description} Re-check returned HTTP {code} (not 200); "
+                "treat as a possible false positive."
+            )[:800]
+    return finding_list
+
+
 _RANK = {s: i for i, s in enumerate(findings_mod.SEVERITIES)}
 
 _SECRET_LINE_RE = re.compile(
@@ -246,6 +299,9 @@ def enrich_findings(finding_list: list, timeout: int = 20,
         if status != 200 or not body.strip():
             out.append(f)
             continue
+
+        # A live 200 with content independently confirms the discovery.
+        f.validation_status = _bump_validation(f.validation_status, "confirmed")
 
         candidates = [
             (title, sev) for rx, title, sev in _EXPOSED_PATTERNS
@@ -923,6 +979,19 @@ def run_assessment(
             max_fetches=int(rules.get("max_evidence_fetches", 25) or 25),
         )
         assessment.findings = findings_mod.dedupe(assessment.findings)
+    if do_web:
+        assessment.findings = validate_findings(
+            assessment.findings,
+            max_checks=int(rules.get("max_validation_checks", 15) or 15),
+        )
+    assessment.findings, noise_findings = findings_mod.drop_noise(
+        assessment.findings
+    )
+    if noise_findings:
+        skipped_steps.append(
+            f"dropped {len(noise_findings)} informational noise item(s)"
+        )
+    assessment.findings = findings_mod.dedupe(assessment.findings)
     assessment.finished = _iso()
     if skipped_steps:
         assessment.notes = (assessment.notes or "") + "\n\n## Scope-safe omissions\n" + \
