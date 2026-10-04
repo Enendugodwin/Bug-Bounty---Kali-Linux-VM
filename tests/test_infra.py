@@ -1,5 +1,6 @@
 """Tests for the infra (firewalls/Windows/switches/Linux) scanner."""
 
+import ipaddress
 import json
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from src import infra
 from src import jobs
+from src.scope import Scope
 
 
 NMAP = """\
@@ -16,6 +18,17 @@ PORT     STATE SERVICE       VERSION
 22/tcp   open  ssh           OpenSSH 9.6
 445/tcp  open  microsoft-ds  Windows Server 2019
 161/tcp  open  snmp          net-snmp
+"""
+
+NMAP_MULTI = """\
+Nmap scan report for 10.0.0.5
+PORT    STATE SERVICE
+445/tcp open  microsoft-ds
+
+Nmap scan report for dc.corp (10.0.0.6)
+PORT    STATE SERVICE
+22/tcp  open  ssh
+389/tcp open  ldap
 """
 
 
@@ -142,6 +155,88 @@ class InfraGateTests(unittest.TestCase):
         self.assertIn("enum4linux-ng", tools)   # SMB branch
         # detection is not a vuln on its own
         self.assertTrue(all(f.tool in tools for f in a.findings))
+
+
+class NetworkHelpersTests(unittest.TestCase):
+    def test_as_network_only_for_real_cidrs(self):
+        self.assertIsNone(infra._as_network("10.0.0.5"))
+        self.assertIsNone(infra._as_network("10.0.0.5/32"))
+        self.assertEqual(str(infra._as_network("10.0.0.0/24")), "10.0.0.0/24")
+
+    def test_parse_nmap_hosts(self):
+        hosts = infra._parse_nmap_hosts(NMAP_MULTI)
+        self.assertEqual(set(hosts), {"10.0.0.5", "10.0.0.6"})
+        self.assertIn(445, hosts["10.0.0.5"])
+        self.assertIn(389, hosts["10.0.0.6"])
+
+
+class NetworkScopeTests(unittest.TestCase):
+    def test_in_scope_network_allowed(self):
+        sc = Scope(in_cidrs=[ipaddress.ip_network("10.0.0.0/24")])
+        self.assertTrue(sc.check_network("10.0.0.0/24")[0])
+
+    def test_out_of_scope_network_denied(self):
+        sc = Scope(in_cidrs=[ipaddress.ip_network("10.0.0.0/24")])
+        self.assertFalse(sc.check_network("10.0.1.0/24")[0])
+
+    def test_network_overlapping_exclusion_denied(self):
+        sc = Scope(in_cidrs=[ipaddress.ip_network("10.0.0.0/16")],
+                   ex_cidrs=[ipaddress.ip_network("10.0.5.0/24")])
+        self.assertFalse(sc.check_network("10.0.0.0/16")[0])
+
+    def test_partial_containment_denied(self):
+        sc = Scope(in_cidrs=[ipaddress.ip_network("10.0.0.0/25")])
+        self.assertFalse(sc.check_network("10.0.0.0/24")[0])
+
+
+class NetworkScanTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_db = jobs.DB_PATH
+        self.old_init = jobs._INITIALIZED_PATH
+        jobs.DB_PATH = Path(self.tmp.name) / "infra-net.sqlite3"
+        jobs._INITIALIZED_PATH = None
+
+    def tearDown(self):
+        jobs.DB_PATH = self.old_db
+        jobs._INITIALIZED_PATH = self.old_init
+        self.tmp.cleanup()
+
+    def test_network_scan_dispatches_per_host(self):
+        fake = SimpleNamespace(
+            rules={"max_requests_per_second": 5, "allowed_ports": []},
+            program={},
+            check=lambda _t: (True, "in scope"),
+            check_network=lambda _t: (True, "net authorized"),
+        )
+
+        def fake_run(argv, **kwargs):
+            out = NMAP_MULTI if argv[0] == "nmap" else ""
+            return SimpleNamespace(command=argv, stdout=out, stderr="",
+                                   exit_code=0, duration_ms=1,
+                                   artifact_path=None)
+
+        with patch.object(infra.scope, "get_scope", return_value=fake), \
+             patch.object(infra.runner, "run", side_effect=fake_run), \
+             patch.object(infra.memory.memory, "add_document", return_value=None):
+            a = infra.run_infra("10.0.0.0/24",
+                                reports_dir=Path(self.tmp.name) / "r")
+        self.assertTrue(a.authorized)
+        tools = {c["tool"] for c in a.commands}
+        self.assertIn("nmap", tools)
+        self.assertIn("enum4linux-ng", tools)   # from 10.0.0.5 (445)
+        self.assertIn("nxc", tools)             # smb + ldap branches
+
+    def test_oversized_network_refused(self):
+        fake = SimpleNamespace(
+            rules={}, program={},
+            check=lambda _t: (True, "in scope"),
+            check_network=lambda _t: (True, "net authorized"),
+        )
+        with patch.object(infra.scope, "get_scope", return_value=fake):
+            with self.assertRaises(ValueError):
+                infra.run_infra("10.0.0.0/16", max_hosts=256,
+                                reports_dir=Path(self.tmp.name))
 
 
 if __name__ == "__main__":

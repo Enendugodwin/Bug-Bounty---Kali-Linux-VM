@@ -298,6 +298,7 @@ def _cmd_infra(args) -> int:
             cmd_timeout=args.timeout,
             include_intrusive=args.intrusive,
             confirm_intrusive=args.confirm_intrusive,
+            max_hosts=args.max_hosts,
             reports_dir=Path(args.report_dir) if args.report_dir else None,
             job_source="cli",
         )
@@ -453,6 +454,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="requests/second ceiling (clamped to scope rules).")
     sp.add_argument("--timeout", type=int, default=900,
                     help="Max seconds per tool (default 900).")
+    sp.add_argument("--max-hosts", type=int, default=256,
+                    help="Refuse CIDR targets larger than this many addresses "
+                         "(default 256).")
     sp.add_argument("--intrusive", action="store_true",
                     help="Enable gated intrusive tools (nmap vuln scripts, "
                          "credential attacks).")

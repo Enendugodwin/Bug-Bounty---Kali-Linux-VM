@@ -293,12 +293,16 @@ are listed under **Skipped / not applicable** rather than failing silently.
 
 ## 🧱 Infrastructure scanning (`infra`)
 
-`src/infra.py` assesses a single authorized host/IP and picks tools from the
-services nmap discovers. Deny-by-default scope and RoE rate limits apply, and
+`src/infra.py` assesses an authorized **host/IP or CIDR network** and picks
+tools from the services nmap discovers. A network must lie within an in-scope
+`cidrs` entry in `scope.yaml`, each discovered host is re-checked individually
+(per-IP exclusions still apply), and networks larger than `--max-hosts`
+(default 256) are refused. Deny-by-default scope and RoE rate limits apply, and
 tools that are not installed are reported as *skipped*.
 
 ```bash
 python -m src.cli infra 10.0.0.5 --operator alice
+python -m src.cli infra 10.0.0.0/24 --max-hosts 256                # subnet sweep
 python -m src.cli infra 10.0.0.5 --intrusive --confirm-intrusive   # gated
 ```
 

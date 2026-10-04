@@ -242,6 +242,26 @@ class Scope:
                 return True, f"{host} authorized (wildcard {w})"
         return False, f"{host} is not listed in scope"
 
+    def check_network(self, target: str) -> tuple[bool, str]:
+        """Return ``(allowed, reason)`` for a CIDR network. Deny-by-default."""
+        try:
+            net = ipaddress.ip_network(str(target).strip(), strict=False)
+        except ValueError:
+            return False, f"{target} is not a valid network"
+        if self.is_empty():
+            return False, "scope is empty (no authorized targets configured)"
+        for excluded in self.ex_cidrs:
+            if net.overlaps(excluded):
+                return False, f"{net} overlaps excluded network {excluded}"
+        for cidr in self.in_cidrs:
+            if net.subnet_of(cidr):
+                return True, f"{net} authorized (in {cidr})"
+        for cidr in self.in_cidrs:
+            if net.overlaps(cidr):
+                return False, (f"{net} is only partially within in-scope {cidr}; "
+                               "list tighter networks")
+        return False, f"{net} is not within any in-scope cidr"
+
 
 # ---------------------------------------------------------------------------
 # Loaders
@@ -350,4 +370,18 @@ def assert_allowed(target: str, **kwargs) -> Scope:
     ok, reason = scope.check(target, **kwargs)
     if not ok:
         raise ScopeError(f"Target not authorized: {target} ({reason})")
+    return scope
+
+
+def check_network(target: str) -> tuple[bool, str]:
+    """Return ``(allowed, reason)`` for a CIDR network."""
+    return get_scope().check_network(target)
+
+
+def assert_network_allowed(target: str) -> Scope:
+    """Raise :class:`ScopeError` unless the CIDR *target* is authorized."""
+    scope = get_scope()
+    ok, reason = scope.check_network(target)
+    if not ok:
+        raise ScopeError(f"Network not authorized: {target} ({reason})")
     return scope
