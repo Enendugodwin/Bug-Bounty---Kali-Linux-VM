@@ -466,22 +466,26 @@ PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>KALI·PENTEST — Scan Console</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+ @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+ /* Design system generated with ui-ux-pro-max — "Cyberpunk UI" (Cybersecurity Platform) */
  :root{
-   --bg:#04070a; --bg2:#070d13; --panel:rgba(9,18,26,.82); --line:rgba(0,255,156,.22);
-   --grn:#00ff9c; --cyn:#22d3ee; --amb:#ffb020; --red:#ff3b4e; --pur:#a855f7;
-   --fg:#c9f7e5; --mut:#5f7d74;
+   --bg:#000000; --bg2:#0c130e; --panel:rgba(12,19,14,.86); --line:rgba(0,255,65,.18);
+   --grn:#00ff41; --cyn:#22d3ee; --amb:#ffb020; --red:#ef4444; --pur:#a855f7;
+   --fg:#e0e0e0; --mut:#94a3b8;
+   --ring:#00ff41; --radius:8px;
  }
  *{box-sizing:border-box}
- body{margin:0;color:var(--fg);font:14px/1.5 ui-monospace,SFMono-Regular,Consolas,"Courier New",monospace;
+ body{margin:0;color:var(--fg);font:14px/1.55 "Fira Sans",ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
    background:
-     radial-gradient(1200px 600px at 20% -10%, rgba(0,255,156,.08), transparent 60%),
-     radial-gradient(900px 500px at 100% 0%, rgba(34,211,238,.07), transparent 55%),
-     linear-gradient(rgba(0,255,156,.035) 1px, transparent 1px) 0 0/100% 26px,
-     linear-gradient(90deg, rgba(0,255,156,.035) 1px, transparent 1px) 0 0/26px 100%,
+     radial-gradient(1200px 600px at 20% -10%, rgba(0,255,65,.08), transparent 60%),
+     radial-gradient(900px 500px at 100% 0%, rgba(34,211,238,.06), transparent 55%),
+     linear-gradient(rgba(0,255,65,.03) 1px, transparent 1px) 0 0/100% 26px,
+     linear-gradient(90deg, rgba(0,255,65,.03) 1px, transparent 1px) 0 0/26px 100%,
      var(--bg);
  }
+ h1,button,th,.badge,.meta,.live,.hint,code,label{font-family:"Fira Code",ui-monospace,SFMono-Regular,Consolas,monospace}
  body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:5;
-   background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);opacity:.5}
+   background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);opacity:.45}
  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;
    flex-wrap:wrap;background:linear-gradient(180deg, rgba(0,255,156,.06), transparent);position:relative;z-index:6}
  h1{font-size:15px;margin:0 16px 0 0;letter-spacing:2px;color:var(--grn);
@@ -539,49 +543,74 @@ PAGE = r"""<!doctype html>
  .rep .nm{flex:1;word-break:break-all;color:var(--fg)}
  .live{color:var(--grn);font-weight:700;letter-spacing:1px}
  .live:before{content:"● ";color:var(--grn);text-shadow:0 0 8px var(--grn)}
+ /* --- ui-ux-pro-max refinements ------------------------------------- */
+ :focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:4px}
+ button,a,input,select,textarea{transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,color .18s ease}
+ button,a{cursor:pointer}
+ .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px}
+ .icn{width:16px;height:16px;vertical-align:-3px;margin-right:6px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+ .brand{width:20px;height:20px;vertical-align:-4px;margin-right:8px;color:var(--grn);filter:drop-shadow(0 0 6px rgba(0,255,65,.6));fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+ @media (max-width:640px){ main{padding:14px} h1{font-size:13px} .meta{gap:14px} td.bar-cell{width:150px} }
+ @media (prefers-reduced-motion: reduce){
+   *{animation:none !important;transition:none !important}
+   body:after{display:none}
+ }
 </style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+ <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+ <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M3 12h18"/></symbol>
+ <symbol id="i-scope" viewBox="0 0 24 24"><path d="M4 5h16"/><path d="M4 12h10"/><path d="M4 19h7"/><circle cx="18" cy="16" r="3"/><path d="M20.5 18.5L23 21"/></symbol>
+ <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></symbol>
+ <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7V3"/><path d="M8 15h8"/></symbol>
+ <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 4v4h-4"/></symbol>
+ <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+ <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 12l5 5 5-5"/><path d="M5 21h14"/></symbol>
+</defs></svg>
 <header>
-  <h1><span class="dots"><i></i><i></i><i></i></span>KALI·PENTEST</h1>
+  <h1><svg class="brand" aria-hidden="true"><use href="#i-shield"/></svg>KALI·PENTEST</h1>
   <span class="live" id="live" style="display:none">LIVE SCAN</span>
-  <span class="live" id="globalRun" style="display:none;color:#ffb020">● 0 RUNNING</span>
+  <span class="live" id="globalRun" style="display:none;color:#ffb020">0 RUNNING</span>
   <span style="flex:1"></span>
-  <button class="sec" id="tabScan">◈ Scan</button>
-  <button class="sec" id="tabScope">◈ Scope</button>
+  <button class="sec" id="tabScan"><svg class="icn" aria-hidden="true"><use href="#i-scan"/></svg>Scan</button>
+  <button class="sec" id="tabScope"><svg class="icn" aria-hidden="true"><use href="#i-scope"/></svg>Scope</button>
 </header>
 <main>
  <div id="viewScan">
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-    <input id="target" placeholder="target // must be in scope" value="www.vulnbank.org" size="32">
-    <select id="profile">
+    <input id="target" placeholder="target // must be in scope" value="www.vulnbank.org" size="32" aria-label="Target">
+    <select id="profile" aria-label="Scan profile">
       <option value="matrix">matrix — all tools</option>
       <option value="cve">cve — nuclei + nmap vuln</option>
+      <option value="infra">infra — SMB/SNMP/SSH/RDP/VPN</option>
     </select>
-    <input id="operator" placeholder="operator" value="review" size="10">
-    <button id="start">▶ Start scan</button>
+    <input id="operator" placeholder="operator" value="review" size="10" aria-label="Operator">
+    <button id="start"><svg class="icn" aria-hidden="true"><use href="#i-play"/></svg>Start scan</button>
   </div>
   <div class="bar"><span id="obar"></span><b id="otxt">IDLE</b></div>
-  <div class="meta">
+  <div class="meta" role="status" aria-live="polite">
     <span>STATUS <b id="mstatus">—</b></span>
     <span>AGENT <b id="magent">—</b></span>
     <span>TARGET <b id="mtarget">—</b></span>
     <span>NOW <b id="mcur">—</b></span>
     <span>T+ <b id="melapsed">0s</b></span>
   </div>
-  <table><thead><tr><th>Agent</th><th>Tool</th><th>Status</th><th>Progress</th>
-    <th>Duration</th><th>Exit</th><th>Findings</th></tr></thead>
+  <div class="tablewrap">
+  <table><thead><tr><th scope="col">Agent</th><th scope="col">Tool</th><th scope="col">Status</th><th scope="col">Progress</th>
+    <th scope="col">Duration</th><th scope="col">Exit</th><th scope="col">Findings</th></tr></thead>
     <tbody id="rows"><tr><td colspan="7" style="color:var(--mut)">// no scan yet — configure a target and hit START</td></tr></tbody></table>
+  </div>
   <div class="card" id="sum" style="display:none"></div>
  </div>
 
  <div id="viewScope" style="display:none">
    <div class="hint">// editing <b>scope.yaml</b> (authoritative). SAVE validates the YAML and hot-reloads the scope.</div>
-   <textarea id="scopeYaml" spellcheck="false"></textarea>
+   <textarea id="scopeYaml" spellcheck="false" aria-label="scope.yaml contents"></textarea>
    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
-     <button id="saveScope">▶ Save scope</button>
-     <button class="sec" id="reloadScope">↻ Reload</button>
-     <input id="checkTarget" placeholder="target to check" size="26">
-     <button class="sec" id="checkBtn">? Scope check</button>
-     <span id="scopeMsg"></span>
+     <button id="saveScope"><svg class="icn" aria-hidden="true"><use href="#i-save"/></svg>Save scope</button>
+     <button class="sec" id="reloadScope"><svg class="icn" aria-hidden="true"><use href="#i-refresh"/></svg>Reload</button>
+     <input id="checkTarget" placeholder="target to check" size="26" aria-label="Target to check">
+     <button class="sec" id="checkBtn"><svg class="icn" aria-hidden="true"><use href="#i-search"/></svg>Scope check</button>
+     <span id="scopeMsg" role="status" aria-live="polite"></span>
    </div>
  </div>
 
@@ -594,9 +623,9 @@ PAGE = r"""<!doctype html>
 <script>
 const $=id=>document.getElementById(id);
 const sev=["critical","high","medium","low","info"];
-const col={critical:"#ff3b4e",high:"#ff8a3d",medium:"#ffb020",low:"#22d3ee",info:"#5f7d74"};
-const agentCol={"Recon Agent":"#22d3ee","Web Agent":"#00ff9c","CVE Agent":"#ffb020",
-  "Exploit Agent":"#ff3b4e","Matrix Agent":"#a855f7"};
+const col={critical:"#ef4444",high:"#ff8a3d",medium:"#ffb020",low:"#22d3ee",info:"#94a3b8"};
+const agentCol={"Recon Agent":"#22d3ee","Web Agent":"#00ff41","CVE Agent":"#ffb020",
+  "Exploit Agent":"#ef4444","Matrix Agent":"#a855f7","Infra Agent":"#f59e0b"};
 let sid=null, timer=null;
 
 $("tabScan").onclick=()=>{$("viewScan").style.display="";$("viewScope").style.display="none";};
@@ -653,7 +682,7 @@ async function poll(){
     tr.querySelector(".st").innerHTML='<span class="badge '+st.status+'">'+st.status+'</span>';
     const bar=tr.querySelector(".mini>span");
     bar.style.width=(st.progress||0)+"%";
-    const bc=(st.status==="error")?"#ff3b4e":(st.status==="done")?"#00ff9c":(st.status==="skipped")?"#5f7d74":(st.status==="interrupted")?"#ffb020":"#22d3ee";
+    const bc=(st.status==="error")?"#ef4444":(st.status==="done")?"#00ff41":(st.status==="skipped")?"#94a3b8":(st.status==="interrupted")?"#ffb020":"#22d3ee";
     bar.style.background=bc;bar.style.boxShadow="0 0 8px "+bc;
     tr.querySelector(".du").textContent=st.duration_ms!=null?(st.duration_ms/1000).toFixed(1)+"s":"—";
     tr.querySelector(".ex").textContent=st.exit_code!=null?st.exit_code:"—";
@@ -662,7 +691,7 @@ async function poll(){
   if(s.findings){
     $("sum").style.display="block";
     $("sum").innerHTML="<b>// FINDINGS</b> "+sev.map(k=>'<span class="sev" style="color:'+col[k]+'">'+k+"="+(s.findings[k]||0)+"</span>").join("")+
-      (s.status==="done"?('<a class="dl" href="/api/scan/'+s.id+'/download?fmt=md">⬇ REPORT .MD</a> <a class="dl" style="color:#22d3ee;border-color:#22d3ee" href="/api/scan/'+s.id+'/download?fmt=json">⬇ JSON</a>'):"");
+      (s.status==="done"?('<a class="dl" href="/api/scan/'+s.id+'/download?fmt=md"><svg class="icn" aria-hidden="true"><use href="#i-download"/></svg>REPORT .MD</a> <a class="dl" style="color:#22d3ee;border-color:#22d3ee" href="/api/scan/'+s.id+'/download?fmt=json"><svg class="icn" aria-hidden="true"><use href="#i-download"/></svg>JSON</a>'):"");
     loadReports();
   }
   if(s.status==="error")$("sum").innerHTML="<b style='color:#ff3b4e'>// ERROR</b> "+s.error;

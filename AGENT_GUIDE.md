@@ -358,6 +358,9 @@ python -m src.webgui --host 0.0.0.0 --port 8080
   `GET /api/reports/download`.
 - Progress comes from events emitted by the orchestrators
   (`scan_start → plan → step_start/step_end → scan_done`).
+- **Design**: follows the `ui-ux-pro-max` *Cyberpunk UI* design system
+  (Fira Code/Fira Sans, matrix-green tokens, SVG icons, `:focus-visible` and
+  `prefers-reduced-motion` support); profiles selectable: matrix, cve, infra.
 
 ---
 
